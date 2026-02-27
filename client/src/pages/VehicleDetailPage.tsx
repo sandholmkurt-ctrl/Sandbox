@@ -5,6 +5,7 @@ import {
   ArrowLeft, Car, AlertTriangle, Clock, CheckCircle, Wrench,
   Plus, Trash2, Gauge, History, ListChecks, Edit3, Save, X,
 } from 'lucide-react';
+import MaintenanceMap from '../components/MaintenanceMap';
 
 export default function VehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -211,36 +212,17 @@ export default function VehicleDetailPage() {
             </div>
           ) : (
             <>
-              {/* Maintenance Map (color-coded) */}
-              <div className="card">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Maintenance Map</h3>
-                <div className="flex flex-wrap gap-2">
-                  {schedule.map((s: any) => (
-                    <div
-                      key={s.id}
-                      className={`px-3 py-2 rounded-lg text-xs font-medium cursor-pointer hover:opacity-80 transition-opacity ${
-                        s.status === 'overdue' ? 'bg-red-100 text-red-800 border border-red-200' :
-                        s.status === 'upcoming' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
-                        'bg-green-50 text-green-700 border border-green-200'
-                      }`}
-                      title={`${s.service_name} — ${s.status}`}
-                      onClick={() => {
-                        setSelectedSchedule(s);
-                        setServiceMileage(vehicle.current_mileage.toString());
-                        setShowCompleteService(true);
-                      }}
-                    >
-                      {s.service_name}
-                    </div>
-                  ))}
-                </div>
-                <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
-                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-200"></span> Overdue</span>
-                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-200"></span> Upcoming</span>
-                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-100"></span> OK</span>
-                  <span className="ml-auto">Click a service to mark it complete</span>
-                </div>
-              </div>
+              {/* Visual Maintenance Map Grid */}
+              <MaintenanceMap
+                schedule={schedule}
+                currentMileage={vehicle.current_mileage}
+                vehicleLabel={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+                onServiceClick={(item) => {
+                  setSelectedSchedule(item);
+                  setServiceMileage(vehicle.current_mileage.toString());
+                  setShowCompleteService(true);
+                }}
+              />
 
               {/* Detailed List */}
               <div className="space-y-2">
