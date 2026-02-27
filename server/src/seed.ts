@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import db, { initializeDatabase } from './database';
+import { generateScheduleForVehicle } from './services/scheduleEngine';
 
 /**
  * Seeds the database with manufacturer-recommended service definitions and
@@ -488,9 +489,578 @@ async function seed() {
 
 
     // ═════════════════════════════════════════════════════════════════
-    //  4WD / AWD GENERIC FALLBACK (priority 5)
-    //  For makes not specifically covered above
+    //  TOYOTA — Additional Popular Models
     // ═════════════════════════════════════════════════════════════════
+
+    // ── Toyota Highlander (2020-2024, 4th Gen, 3.5L V6 / 2.5L Hybrid) ─
+    { service: 'Engine Oil & Filter', make: 'Toyota', model: 'Highlander', yearMin: 2020, yearMax: 2024, mileage: 10000, months: 12, priority: 20,
+      source: "Highlander Owner's Manual — 10,000 mi / 12 months with 0W-20 synthetic" },
+    { service: 'Tire Rotation', make: 'Toyota', model: 'Highlander', yearMin: 2020, yearMax: 2024, mileage: 5000, months: 6, priority: 20,
+      source: "Highlander Owner's Manual — Every 5,000 mi or 6 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Toyota', model: 'Highlander', yearMin: 2020, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Highlander Owner's Manual — 'Replace AT fluid at 60,000 mi under normal conditions'",
+      notes: 'Toyota WS ATF. Hybrid models use eCVT — no traditional ATF change required.' },
+    { service: 'Coolant (Antifreeze)', make: 'Toyota', model: 'Highlander', yearMin: 2020, yearMax: 2024, mileage: 100000, months: 120, priority: 20,
+      source: "Highlander Owner's Manual — First coolant at 100,000 mi, then 50,000 mi" },
+    { service: 'Rear Differential Fluid', make: 'Toyota', model: 'Highlander', yearMin: 2020, yearMax: 2024, driveType: 'AWD', mileage: 30000, months: 24, priority: 25,
+      source: "Highlander Owner's Manual — 'Replace rear differential oil every 30,000 mi (AWD models)'" },
+
+    // ── Toyota Highlander (2014-2019, 3rd Gen) ──────────────────
+    { service: 'Engine Oil & Filter', make: 'Toyota', model: 'Highlander', yearMin: 2014, yearMax: 2019, mileage: 10000, months: 12, priority: 20,
+      source: "Highlander Owner's Manual (3rd Gen) — 10,000 mi / 12 months with 0W-20 synthetic" },
+    { service: 'Tire Rotation', make: 'Toyota', model: 'Highlander', yearMin: 2014, yearMax: 2019, mileage: 5000, months: 6, priority: 20,
+      source: "Highlander Owner's Manual (3rd Gen) — Every 5,000 mi or 6 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Toyota', model: 'Highlander', yearMin: 2014, yearMax: 2019, mileage: 60000, months: 48, priority: 20,
+      source: "Highlander Owner's Manual (3rd Gen) — Replace AT fluid at 60,000 mi" },
+    { service: 'Rear Differential Fluid', make: 'Toyota', model: 'Highlander', yearMin: 2014, yearMax: 2019, driveType: 'AWD', mileage: 30000, months: 24, priority: 25,
+      source: "Highlander Owner's Manual (3rd Gen) — Replace rear differential oil every 30,000 mi (AWD)" },
+
+    // ── Toyota RAV4 (2019-2024, 5th Gen, 2.5L / Hybrid) ────────
+    { service: 'Engine Oil & Filter', make: 'Toyota', model: 'RAV4', yearMin: 2019, yearMax: 2024, mileage: 10000, months: 12, priority: 20,
+      source: "RAV4 Owner's Manual — 10,000 mi / 12 months with 0W-16 or 0W-20 synthetic" },
+    { service: 'Tire Rotation', make: 'Toyota', model: 'RAV4', yearMin: 2019, yearMax: 2024, mileage: 5000, months: 6, priority: 20,
+      source: "RAV4 Owner's Manual — Every 5,000 mi or 6 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Toyota', model: 'RAV4', yearMin: 2019, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "RAV4 Owner's Manual — 'Replace Direct Shift CVT fluid at 60,000 mi'",
+      notes: 'Hybrid models: inspect only. Non-hybrid uses Direct Shift CVT.' },
+    { service: 'Coolant (Antifreeze)', make: 'Toyota', model: 'RAV4', yearMin: 2019, yearMax: 2024, mileage: 100000, months: 120, priority: 20,
+      source: "RAV4 Owner's Manual — First coolant at 100,000 mi, then 50,000 mi" },
+    { service: 'Rear Differential Fluid', make: 'Toyota', model: 'RAV4', yearMin: 2019, yearMax: 2024, driveType: 'AWD', mileage: 30000, months: 24, priority: 25,
+      source: "RAV4 Owner's Manual — 'Replace rear differential oil every 30,000 mi (AWD models)'" },
+
+    // ── Toyota RAV4 (2013-2018, 4th Gen) ────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Toyota', model: 'RAV4', yearMin: 2013, yearMax: 2018, mileage: 10000, months: 12, priority: 20,
+      source: "RAV4 Owner's Manual (4th Gen) — 10,000 mi / 12 months with 0W-20 synthetic" },
+    { service: 'Automatic Transmission Fluid', make: 'Toyota', model: 'RAV4', yearMin: 2013, yearMax: 2018, mileage: 60000, months: 48, priority: 20,
+      source: "RAV4 Owner's Manual (4th Gen) — Replace AT fluid at 60,000 mi" },
+
+    // ── Toyota Corolla (2019-2024, 12th Gen) ────────────────────
+    { service: 'Engine Oil & Filter', make: 'Toyota', model: 'Corolla', yearMin: 2019, yearMax: 2024, mileage: 10000, months: 12, priority: 20,
+      source: "Corolla Owner's Manual — 10,000 mi / 12 months with 0W-16 or 0W-20 synthetic" },
+    { service: 'Tire Rotation', make: 'Toyota', model: 'Corolla', yearMin: 2019, yearMax: 2024, mileage: 5000, months: 6, priority: 20,
+      source: "Corolla Owner's Manual — Every 5,000 mi or 6 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Toyota', model: 'Corolla', yearMin: 2019, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Corolla Owner's Manual — 'Replace CVT fluid at 60,000 mi under normal conditions'" },
+    { service: 'Coolant (Antifreeze)', make: 'Toyota', model: 'Corolla', yearMin: 2019, yearMax: 2024, mileage: 100000, months: 120, priority: 20,
+      source: "Corolla Owner's Manual — First coolant at 100,000 mi, then 50,000 mi" },
+
+
+    // ═════════════════════════════════════════════════════════════════
+    //  KIA — Kia Owner's Manual / Maintenance Schedule
+    //  Source: Kia Owner's Manual (2016-2024)
+    //  Kia uses distance- and time-based intervals per owner's manual
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── Kia Universal (all models 2017+) ────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Kia', yearMin: 2017, mileage: 7500, months: 12, priority: 10,
+      source: "Kia Owner's Manual — 'Replace engine oil and filter every 7,500 miles or 12 months (full synthetic)'",
+      notes: 'Turbo models (1.6T, 2.5T): 5,000 mi or 6 months under severe conditions' },
+    { service: 'Tire Rotation', make: 'Kia', yearMin: 2017, mileage: 7500, months: 12, priority: 10,
+      source: "Kia Owner's Manual — 'Rotate tires every 7,500 miles'" },
+    { service: 'Engine Air Filter', make: 'Kia', yearMin: 2017, mileage: 30000, months: 36, priority: 10,
+      source: "Kia Owner's Manual — 'Replace air cleaner filter every 30,000 miles'" },
+    { service: 'Cabin Air Filter', make: 'Kia', yearMin: 2017, mileage: 15000, months: 24, priority: 10,
+      source: "Kia Owner's Manual — 'Replace cabin air filter every 15,000 miles or 24 months'" },
+    { service: 'Spark Plugs', make: 'Kia', yearMin: 2017, mileage: 97500, months: 84, priority: 10,
+      source: "Kia Owner's Manual — 'Replace spark plugs (iridium) every 97,500 miles'" },
+    { service: 'Coolant (Antifreeze)', make: 'Kia', yearMin: 2017, mileage: 120000, months: 120, priority: 10,
+      source: "Kia Owner's Manual — 'Replace coolant at 120,000 miles or 10 years, then 30,000 mi / 2 yrs'" },
+    { service: 'Brake Fluid', make: 'Kia', yearMin: 2017, mileage: 30000, months: 24, priority: 10,
+      source: "Kia Owner's Manual — 'Inspect brake fluid every 30,000 miles or 24 months; replace as needed'" },
+    { service: 'Automatic Transmission Fluid', make: 'Kia', yearMin: 2017, mileage: 60000, months: 48, priority: 10,
+      source: "Kia Owner's Manual — 'Inspect AT fluid at 60,000 mi; replace if deteriorated'" },
+    { service: 'Drive Belt (Serpentine)', make: 'Kia', yearMin: 2017, mileage: 60000, months: 60, priority: 10,
+      source: "Kia Owner's Manual — 'Inspect drive belt at 60,000 mi; replace as needed'" },
+    { service: 'Brake Pads & Rotors Inspection', make: 'Kia', yearMin: 2017, mileage: 15000, months: 12, priority: 10,
+      source: "Kia Owner's Manual — 'Inspect brake pads, calipers, and rotors every 15,000 mi'" },
+
+    // ── Kia Carnival (2022-2024, KA4) ───────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Kia', model: 'Carnival', yearMin: 2022, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Carnival Owner's Manual — 'Replace engine oil every 7,500 mi / 12 months (3.5L V6, 0W-20 full synthetic)'" },
+    { service: 'Tire Rotation', make: 'Kia', model: 'Carnival', yearMin: 2022, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Carnival Owner's Manual — 'Rotate tires every 7,500 mi'" },
+    { service: 'Automatic Transmission Fluid', make: 'Kia', model: 'Carnival', yearMin: 2022, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Carnival Owner's Manual — 'Inspect AT fluid at 60,000 mi; replace if dark or contaminated'",
+      notes: '8-speed automatic. Kia says inspect; many techs recommend replacement at 60K.' },
+    { service: 'Coolant (Antifreeze)', make: 'Kia', model: 'Carnival', yearMin: 2022, yearMax: 2024, mileage: 120000, months: 120, priority: 20,
+      source: "Carnival Owner's Manual — 'Replace coolant at 120,000 mi or 10 years, then 30,000 mi / 2 yrs'" },
+    { service: 'Spark Plugs', make: 'Kia', model: 'Carnival', yearMin: 2022, yearMax: 2024, mileage: 97500, months: 84, priority: 20,
+      source: "Carnival Owner's Manual — 'Replace iridium spark plugs at 97,500 mi'" },
+
+    // ── Kia Telluride (2020-2024) ───────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Kia', model: 'Telluride', yearMin: 2020, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Telluride Owner's Manual — 'Replace engine oil every 7,500 mi / 12 months (3.8L V6, 0W-20)'" },
+    { service: 'Tire Rotation', make: 'Kia', model: 'Telluride', yearMin: 2020, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Telluride Owner's Manual — 'Rotate tires every 7,500 mi'" },
+    { service: 'Automatic Transmission Fluid', make: 'Kia', model: 'Telluride', yearMin: 2020, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Telluride Owner's Manual — 'Inspect AT fluid at 60,000 mi; replace if needed'",
+      notes: '8-speed automatic. Replace recommended at 60K even if manual says inspect.' },
+    { service: 'Coolant (Antifreeze)', make: 'Kia', model: 'Telluride', yearMin: 2020, yearMax: 2024, mileage: 120000, months: 120, priority: 20,
+      source: "Telluride Owner's Manual — 'Replace coolant at 120,000 mi or 10 years'" },
+    { service: 'Rear Differential Fluid', make: 'Kia', model: 'Telluride', yearMin: 2020, yearMax: 2024, driveType: 'AWD', mileage: 60000, months: 48, priority: 25,
+      source: "Telluride Owner's Manual — 'Replace rear differential fluid at 60,000 mi (AWD models)'" },
+    { service: 'Transfer Case Fluid', make: 'Kia', model: 'Telluride', yearMin: 2020, yearMax: 2024, driveType: 'AWD', mileage: 60000, months: 48, priority: 25,
+      source: "Telluride Owner's Manual — 'Replace transfer case fluid at 60,000 mi (AWD models)'" },
+
+    // ── Kia Sorento (2016-2024) ─────────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Kia', model: 'Sorento', yearMin: 2016, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Sorento Owner's Manual — 'Replace engine oil every 7,500 mi / 12 months'" },
+    { service: 'Automatic Transmission Fluid', make: 'Kia', model: 'Sorento', yearMin: 2016, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Sorento Owner's Manual — 'Inspect AT fluid at 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Kia', model: 'Sorento', yearMin: 2016, yearMax: 2024, driveType: 'AWD', mileage: 60000, months: 48, priority: 25,
+      source: "Sorento Owner's Manual — 'Replace rear diff fluid at 60,000 mi (AWD)'" },
+
+    // ── Kia Sportage (2017-2024) ────────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Kia', model: 'Sportage', yearMin: 2017, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Sportage Owner's Manual — 'Replace engine oil every 7,500 mi / 12 months'" },
+    { service: 'Automatic Transmission Fluid', make: 'Kia', model: 'Sportage', yearMin: 2017, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Sportage Owner's Manual — 'Inspect AT fluid at 60,000 mi'" },
+
+    // ── Kia Forte (2019-2024) ───────────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Kia', model: 'Forte', yearMin: 2019, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Forte Owner's Manual — 'Replace engine oil every 7,500 mi / 12 months (2.0L, 0W-20)'" },
+    { service: 'Automatic Transmission Fluid', make: 'Kia', model: 'Forte', yearMin: 2019, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Forte Owner's Manual — 'Inspect CVT/IVT fluid at 60,000 mi'" },
+
+
+    // ═════════════════════════════════════════════════════════════════
+    //  HYUNDAI — Hyundai Owner's Manual / Maintenance Schedule
+    //  Source: Hyundai Owner's Manual (2016-2024)
+    //  Hyundai/Kia share powertrain platforms; similar intervals
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── Hyundai Universal (all models 2017+) ────────────────────
+    { service: 'Engine Oil & Filter', make: 'Hyundai', yearMin: 2017, mileage: 7500, months: 12, priority: 10,
+      source: "Hyundai Owner's Manual — 'Replace engine oil and filter every 7,500 miles or 12 months (full synthetic)'",
+      notes: 'Turbo engines (1.6T, 2.5T): may trigger sooner under severe conditions' },
+    { service: 'Tire Rotation', make: 'Hyundai', yearMin: 2017, mileage: 7500, months: 12, priority: 10,
+      source: "Hyundai Owner's Manual — 'Rotate tires every 7,500 miles'" },
+    { service: 'Engine Air Filter', make: 'Hyundai', yearMin: 2017, mileage: 30000, months: 36, priority: 10,
+      source: "Hyundai Owner's Manual — 'Replace air cleaner filter every 30,000 miles'" },
+    { service: 'Cabin Air Filter', make: 'Hyundai', yearMin: 2017, mileage: 15000, months: 24, priority: 10,
+      source: "Hyundai Owner's Manual — 'Replace climate control air filter every 15,000 mi or 24 months'" },
+    { service: 'Spark Plugs', make: 'Hyundai', yearMin: 2017, mileage: 97500, months: 84, priority: 10,
+      source: "Hyundai Owner's Manual — 'Replace spark plugs (iridium) every 97,500 miles'" },
+    { service: 'Coolant (Antifreeze)', make: 'Hyundai', yearMin: 2017, mileage: 120000, months: 120, priority: 10,
+      source: "Hyundai Owner's Manual — 'Replace coolant at 120,000 mi or 10 years, then 30,000 mi / 2 yrs'" },
+    { service: 'Brake Fluid', make: 'Hyundai', yearMin: 2017, mileage: 30000, months: 24, priority: 10,
+      source: "Hyundai Owner's Manual — 'Inspect brake fluid every 30,000 mi or 24 months; replace as needed'" },
+    { service: 'Automatic Transmission Fluid', make: 'Hyundai', yearMin: 2017, mileage: 60000, months: 48, priority: 10,
+      source: "Hyundai Owner's Manual — 'Inspect AT fluid at 60,000 mi; replace if deteriorated'" },
+    { service: 'Drive Belt (Serpentine)', make: 'Hyundai', yearMin: 2017, mileage: 60000, months: 60, priority: 10,
+      source: "Hyundai Owner's Manual — 'Inspect drive belt at 60,000 mi; replace as needed'" },
+    { service: 'Brake Pads & Rotors Inspection', make: 'Hyundai', yearMin: 2017, mileage: 15000, months: 12, priority: 10,
+      source: "Hyundai Owner's Manual — 'Inspect brake pads, calipers, and rotors every 15,000 mi'" },
+
+    // ── Hyundai Palisade (2020-2024) ────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Hyundai', model: 'Palisade', yearMin: 2020, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Palisade Owner's Manual — 'Replace engine oil every 7,500 mi / 12 months (3.8L V6, 0W-20)'" },
+    { service: 'Automatic Transmission Fluid', make: 'Hyundai', model: 'Palisade', yearMin: 2020, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Palisade Owner's Manual — 'Inspect AT fluid at 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Hyundai', model: 'Palisade', yearMin: 2020, yearMax: 2024, driveType: 'AWD', mileage: 60000, months: 48, priority: 25,
+      source: "Palisade Owner's Manual — 'Replace coupling fluid at 60,000 mi (HTRAC AWD)'" },
+
+    // ── Hyundai Tucson (2022-2024, NX4) ─────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Hyundai', model: 'Tucson', yearMin: 2022, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Tucson Owner's Manual — 'Replace engine oil every 7,500 mi / 12 months'" },
+    { service: 'Automatic Transmission Fluid', make: 'Hyundai', model: 'Tucson', yearMin: 2022, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Tucson Owner's Manual — 'Inspect 8-speed DCT fluid at 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Hyundai', model: 'Tucson', yearMin: 2022, yearMax: 2024, driveType: 'AWD', mileage: 60000, months: 48, priority: 25,
+      source: "Tucson Owner's Manual — 'Replace coupling fluid at 60,000 mi (AWD)'" },
+
+    // ── Hyundai Santa Fe (2019-2024) ────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Hyundai', model: 'Santa Fe', yearMin: 2019, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Santa Fe Owner's Manual — 'Replace engine oil every 7,500 mi / 12 months'" },
+    { service: 'Automatic Transmission Fluid', make: 'Hyundai', model: 'Santa Fe', yearMin: 2019, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Santa Fe Owner's Manual — 'Inspect AT fluid at 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Hyundai', model: 'Santa Fe', yearMin: 2019, yearMax: 2024, driveType: 'AWD', mileage: 60000, months: 48, priority: 25,
+      source: "Santa Fe Owner's Manual — 'Replace HTRAC coupling fluid at 60,000 mi (AWD)'" },
+
+    // ── Hyundai Elantra (2021-2024, CN7) ────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Hyundai', model: 'Elantra', yearMin: 2021, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Elantra Owner's Manual — 'Replace engine oil every 7,500 mi / 12 months'" },
+    { service: 'Automatic Transmission Fluid', make: 'Hyundai', model: 'Elantra', yearMin: 2021, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Elantra Owner's Manual — 'Inspect CVT/IVT fluid at 60,000 mi'" },
+
+    // ── Hyundai Sonata (2020-2024, DN8) ─────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Hyundai', model: 'Sonata', yearMin: 2020, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Sonata Owner's Manual — 'Replace engine oil every 7,500 mi / 12 months'" },
+    { service: 'Automatic Transmission Fluid', make: 'Hyundai', model: 'Sonata', yearMin: 2020, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Sonata Owner's Manual — 'Inspect 8-speed AT fluid at 60,000 mi'" },
+
+
+    // ═════════════════════════════════════════════════════════════════
+    //  JEEP — Jeep/Stellantis Owner's Manual Maintenance Schedule
+    //  Source: Jeep Owner's Manual (2014-2024)
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── Jeep Universal (all models 2018+) ───────────────────────
+    { service: 'Engine Oil & Filter', make: 'Jeep', yearMin: 2018, mileage: 10000, months: 12, priority: 10,
+      source: "Jeep Owner's Manual — 'Change engine oil per Oil Change Indicator or every 10,000 mi / 12 months max'",
+      notes: 'Jeep Oil Change Indicator system adapts to driving conditions' },
+    { service: 'Tire Rotation', make: 'Jeep', yearMin: 2018, mileage: 10000, months: 12, priority: 10,
+      source: "Jeep Owner's Manual — 'Rotate tires at every oil change interval'" },
+    { service: 'Engine Air Filter', make: 'Jeep', yearMin: 2018, mileage: 30000, months: 36, priority: 10,
+      source: "Jeep Owner's Manual — 'Replace engine air filter at 30,000 mi'" },
+    { service: 'Cabin Air Filter', make: 'Jeep', yearMin: 2018, mileage: 20000, months: 24, priority: 10,
+      source: "Jeep Owner's Manual — 'Replace cabin air filter every 20,000 mi'" },
+    { service: 'Spark Plugs', make: 'Jeep', yearMin: 2018, mileage: 100000, months: 84, priority: 10,
+      source: "Jeep Owner's Manual — 'Replace spark plugs at 100,000 mi (3.6L Pentastar V6)'",
+      notes: '2.0L Turbo: 60,000 mi. 3.6L V6: 100,000 mi. 5.7L HEMI: 100,000 mi.' },
+    { service: 'Coolant (Antifreeze)', make: 'Jeep', yearMin: 2018, mileage: 150000, months: 120, priority: 10,
+      source: "Jeep Owner's Manual — 'Replace OAT coolant at 150,000 mi or 10 years'" },
+    { service: 'Brake Fluid', make: 'Jeep', yearMin: 2018, mileage: 45000, months: 36, priority: 10,
+      source: "Jeep Owner's Manual — 'Inspect brake fluid every 3 years; replace as needed'" },
+
+    // ── Jeep Wrangler (2018-2024, JL) ───────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Jeep', model: 'Wrangler', yearMin: 2018, yearMax: 2024, mileage: 10000, months: 12, priority: 20,
+      source: "Wrangler (JL) Owner's Manual — Per Oil Change Indicator, max 10,000 mi / 12 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Jeep', model: 'Wrangler', yearMin: 2018, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Wrangler Owner's Manual — 'Replace 8-speed AT fluid at 60,000 mi (normal); 30,000 mi (severe/off-road)'" },
+    { service: 'Manual Transmission Fluid', make: 'Jeep', model: 'Wrangler', yearMin: 2018, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Wrangler Owner's Manual — 'Replace manual transmission fluid at 60,000 mi'" },
+    { service: 'Transfer Case Fluid', make: 'Jeep', model: 'Wrangler', yearMin: 2018, yearMax: 2024, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Wrangler Owner's Manual — 'Replace transfer case fluid at 60,000 mi'" },
+    { service: 'Front Differential Fluid', make: 'Jeep', model: 'Wrangler', yearMin: 2018, yearMax: 2024, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Wrangler Owner's Manual — 'Replace front axle fluid at 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Jeep', model: 'Wrangler', yearMin: 2018, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Wrangler Owner's Manual — 'Replace rear axle fluid at 60,000 mi'" },
+    { service: 'Spark Plugs', make: 'Jeep', model: 'Wrangler', yearMin: 2018, yearMax: 2024, mileage: 100000, months: 84, priority: 20,
+      source: "Wrangler Owner's Manual — 'Replace spark plugs at 100,000 mi (3.6L V6)'" },
+
+    // ── Jeep Grand Cherokee (2022-2024, WL) ─────────────────────
+    { service: 'Engine Oil & Filter', make: 'Jeep', model: 'Grand Cherokee', yearMin: 2022, yearMax: 2024, mileage: 10000, months: 12, priority: 20,
+      source: "Grand Cherokee (WL) Owner's Manual — Per Oil Change Indicator, max 10,000 mi / 12 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Jeep', model: 'Grand Cherokee', yearMin: 2022, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Grand Cherokee Owner's Manual — 'Replace AT fluid at 60,000 mi'" },
+    { service: 'Transfer Case Fluid', make: 'Jeep', model: 'Grand Cherokee', yearMin: 2022, yearMax: 2024, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Grand Cherokee Owner's Manual — 'Replace transfer case fluid at 60,000 mi (Quadra-Trac/Quadra-Drive)'" },
+    { service: 'Front Differential Fluid', make: 'Jeep', model: 'Grand Cherokee', yearMin: 2022, yearMax: 2024, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Grand Cherokee Owner's Manual — 'Replace front axle fluid at 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Jeep', model: 'Grand Cherokee', yearMin: 2022, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Grand Cherokee Owner's Manual — 'Replace rear axle fluid at 60,000 mi'" },
+
+    // ── Jeep Grand Cherokee (2014-2021, WK2) ────────────────────
+    { service: 'Engine Oil & Filter', make: 'Jeep', model: 'Grand Cherokee', yearMin: 2014, yearMax: 2021, mileage: 10000, months: 12, priority: 20,
+      source: "Grand Cherokee (WK2) Owner's Manual — Per Oil Change Indicator, max 10,000 mi / 12 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Jeep', model: 'Grand Cherokee', yearMin: 2014, yearMax: 2021, mileage: 60000, months: 48, priority: 20,
+      source: "Grand Cherokee (WK2) Owner's Manual — 'Replace AT fluid at 60,000 mi'" },
+    { service: 'Transfer Case Fluid', make: 'Jeep', model: 'Grand Cherokee', yearMin: 2014, yearMax: 2021, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Grand Cherokee (WK2) Owner's Manual — 'Replace transfer case fluid at 60,000 mi'" },
+    { service: 'Front Differential Fluid', make: 'Jeep', model: 'Grand Cherokee', yearMin: 2014, yearMax: 2021, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Grand Cherokee (WK2) Owner's Manual — 'Replace front axle fluid at 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Jeep', model: 'Grand Cherokee', yearMin: 2014, yearMax: 2021, mileage: 60000, months: 48, priority: 20,
+      source: "Grand Cherokee (WK2) Owner's Manual — 'Replace rear axle fluid at 60,000 mi'" },
+
+
+    // ═════════════════════════════════════════════════════════════════
+    //  RAM — Ram/Stellantis Owner's Manual Maintenance Schedule
+    //  Source: Ram Owner's Manual (2019-2024)
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── Ram 1500 (2019-2024, DT, 5th Gen) ───────────────────────
+    { service: 'Engine Oil & Filter', make: 'Ram', model: '1500', yearMin: 2019, yearMax: 2024, mileage: 10000, months: 12, priority: 20,
+      source: "Ram 1500 Owner's Manual — 'Change oil per Oil Change Indicator or 10,000 mi / 12 months max'",
+      notes: '5.7L HEMI uses 0W-20. 3.6L Pentastar uses 0W-20. EcoDiesel 3.0L: see diesel supplement.' },
+    { service: 'Tire Rotation', make: 'Ram', model: '1500', yearMin: 2019, yearMax: 2024, mileage: 10000, months: 12, priority: 20,
+      source: "Ram 1500 Owner's Manual — 'Rotate tires at every oil change'" },
+    { service: 'Automatic Transmission Fluid', make: 'Ram', model: '1500', yearMin: 2019, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Ram 1500 Owner's Manual — 'Replace 8-speed AT fluid at 60,000 mi (normal)'",
+      notes: 'Severe duty (towing frequently): 30,000 mi. Uses ZF 8HP75 transmission.' },
+    { service: 'Transfer Case Fluid', make: 'Ram', model: '1500', yearMin: 2019, yearMax: 2024, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Ram 1500 Owner's Manual — 'Replace transfer case fluid at 60,000 mi'" },
+    { service: 'Front Differential Fluid', make: 'Ram', model: '1500', yearMin: 2019, yearMax: 2024, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Ram 1500 Owner's Manual — 'Replace front axle fluid at 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Ram', model: '1500', yearMin: 2019, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Ram 1500 Owner's Manual — 'Replace rear axle fluid at 60,000 mi'" },
+    { service: 'Spark Plugs', make: 'Ram', model: '1500', yearMin: 2019, yearMax: 2024, mileage: 100000, months: 84, priority: 20,
+      source: "Ram 1500 Owner's Manual — 'Replace spark plugs at 100,000 mi (5.7L HEMI / 3.6L V6)'" },
+    { service: 'Engine Air Filter', make: 'Ram', model: '1500', yearMin: 2019, yearMax: 2024, mileage: 30000, months: 36, priority: 20,
+      source: "Ram 1500 Owner's Manual — 'Replace engine air filter at 30,000 mi'" },
+    { service: 'Cabin Air Filter', make: 'Ram', model: '1500', yearMin: 2019, yearMax: 2024, mileage: 20000, months: 24, priority: 20,
+      source: "Ram 1500 Owner's Manual — 'Replace cabin air filter every 20,000 mi'" },
+    { service: 'Coolant (Antifreeze)', make: 'Ram', model: '1500', yearMin: 2019, yearMax: 2024, mileage: 150000, months: 120, priority: 20,
+      source: "Ram 1500 Owner's Manual — 'Replace OAT coolant at 150,000 mi or 10 years'" },
+
+    // ── Ram 1500 (2013-2018, DS, 4th Gen) ───────────────────────
+    { service: 'Engine Oil & Filter', make: 'Ram', model: '1500', yearMin: 2013, yearMax: 2018, mileage: 10000, months: 12, priority: 20,
+      source: "Ram 1500 Owner's Manual (4th Gen) — Per Oil Change Indicator, max 10,000 mi / 12 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Ram', model: '1500', yearMin: 2013, yearMax: 2018, mileage: 60000, months: 48, priority: 20,
+      source: "Ram 1500 Owner's Manual (4th Gen) — 'Replace AT fluid at 60,000 mi'" },
+    { service: 'Spark Plugs', make: 'Ram', model: '1500', yearMin: 2013, yearMax: 2018, mileage: 100000, months: 84, priority: 20,
+      source: "Ram 1500 Owner's Manual (4th Gen) — 'Replace spark plugs at 100,000 mi'" },
+
+
+    // ═════════════════════════════════════════════════════════════════
+    //  SUBARU — Subaru Owner's Manual Maintenance Schedule
+    //  Source: Subaru Owner's Manual (2015-2024)
+    //  Subaru: all models AWD standard; Boxer engines
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── Subaru Universal (all models 2017+) ─────────────────────
+    { service: 'Engine Oil & Filter', make: 'Subaru', yearMin: 2017, mileage: 6000, months: 6, priority: 10,
+      source: "Subaru Owner's Manual — 'Replace engine oil and filter every 6,000 miles or 6 months (0W-20 synthetic)'",
+      notes: 'Subaru specifies 6,000 mi intervals even with synthetic oil' },
+    { service: 'Tire Rotation', make: 'Subaru', yearMin: 2017, mileage: 7500, months: 12, priority: 10,
+      source: "Subaru Owner's Manual — 'Rotate tires every 7,500 miles'" },
+    { service: 'Engine Air Filter', make: 'Subaru', yearMin: 2017, mileage: 30000, months: 36, priority: 10,
+      source: "Subaru Owner's Manual — 'Replace air cleaner element every 30,000 miles'" },
+    { service: 'Cabin Air Filter', make: 'Subaru', yearMin: 2017, mileage: 15000, months: 24, priority: 10,
+      source: "Subaru Owner's Manual — 'Replace cabin air filter every 15,000 miles'" },
+    { service: 'Spark Plugs', make: 'Subaru', yearMin: 2017, mileage: 60000, months: 60, priority: 10,
+      source: "Subaru Owner's Manual — 'Replace spark plugs every 60,000 miles (all Boxer engines)'" },
+    { service: 'Coolant (Antifreeze)', make: 'Subaru', yearMin: 2017, mileage: 110000, months: 120, priority: 10,
+      source: "Subaru Owner's Manual — 'Replace Super Coolant at 110,000 mi or 11 years, then 30,000 mi / 2 yrs'" },
+    { service: 'Brake Fluid', make: 'Subaru', yearMin: 2017, mileage: 30000, months: 24, priority: 10,
+      source: "Subaru Owner's Manual — 'Replace brake fluid every 30,000 mi or 24 months'" },
+    { service: 'Automatic Transmission Fluid', make: 'Subaru', yearMin: 2017, mileage: 60000, months: 48, priority: 10,
+      source: "Subaru Owner's Manual — 'Replace CVT fluid (Lineartronic) every 60,000 mi'",
+      notes: 'All modern Subarus use CVT except WRX manual' },
+    { service: 'Drive Belt (Serpentine)', make: 'Subaru', yearMin: 2017, mileage: 60000, months: 60, priority: 10,
+      source: "Subaru Owner's Manual — 'Inspect drive belt at 60,000 mi; replace as needed'" },
+    { service: 'Rear Differential Fluid', make: 'Subaru', yearMin: 2017, driveType: 'AWD', mileage: 30000, months: 24, priority: 15,
+      source: "Subaru Owner's Manual — 'Replace rear differential gear oil every 30,000 mi'" },
+    { service: 'Front Differential Fluid', make: 'Subaru', yearMin: 2017, driveType: 'AWD', mileage: 30000, months: 24, priority: 15,
+      source: "Subaru Owner's Manual — 'Replace front differential gear oil every 30,000 mi'",
+      notes: 'Front diff shares fluid with transmission on some models' },
+
+    // ── Subaru Outback (2015-2024) ──────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Subaru', model: 'Outback', yearMin: 2015, yearMax: 2024, mileage: 6000, months: 6, priority: 20,
+      source: "Outback Owner's Manual — Every 6,000 mi / 6 months (2.5L/2.4T Boxer, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Subaru', model: 'Outback', yearMin: 2015, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Outback Owner's Manual — 'Replace Lineartronic CVT fluid every 60,000 mi'" },
+
+    // ── Subaru Forester (2014-2024) ─────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Subaru', model: 'Forester', yearMin: 2014, yearMax: 2024, mileage: 6000, months: 6, priority: 20,
+      source: "Forester Owner's Manual — Every 6,000 mi / 6 months (2.5L/2.4T Boxer, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Subaru', model: 'Forester', yearMin: 2014, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Forester Owner's Manual — 'Replace Lineartronic CVT fluid every 60,000 mi'" },
+
+    // ── Subaru Crosstrek (2018-2024) ────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Subaru', model: 'Crosstrek', yearMin: 2018, yearMax: 2024, mileage: 6000, months: 6, priority: 20,
+      source: "Crosstrek Owner's Manual — Every 6,000 mi / 6 months (2.0L/2.5L Boxer, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Subaru', model: 'Crosstrek', yearMin: 2018, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Crosstrek Owner's Manual — 'Replace Lineartronic CVT fluid every 60,000 mi'" },
+
+
+    // ═════════════════════════════════════════════════════════════════
+    //  NISSAN — Nissan Owner's Manual Maintenance Schedule
+    //  Source: Nissan Owner's Manual (2015-2024)
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── Nissan Universal (all models 2018+) ─────────────────────
+    { service: 'Engine Oil & Filter', make: 'Nissan', yearMin: 2018, mileage: 5000, months: 6, priority: 10,
+      source: "Nissan Owner's Manual — 'Replace engine oil and filter every 5,000 miles or 6 months'",
+      notes: 'Nissan specifies shorter intervals than most OEMs — 5K mi / 6 months' },
+    { service: 'Tire Rotation', make: 'Nissan', yearMin: 2018, mileage: 5000, months: 6, priority: 10,
+      source: "Nissan Owner's Manual — 'Rotate tires every 5,000 miles'" },
+    { service: 'Engine Air Filter', make: 'Nissan', yearMin: 2018, mileage: 30000, months: 36, priority: 10,
+      source: "Nissan Owner's Manual — 'Replace engine air filter every 30,000 mi'" },
+    { service: 'Cabin Air Filter', make: 'Nissan', yearMin: 2018, mileage: 15000, months: 24, priority: 10,
+      source: "Nissan Owner's Manual — 'Replace in-cabin microfilter every 15,000 mi or 12 months'" },
+    { service: 'Spark Plugs', make: 'Nissan', yearMin: 2018, mileage: 105000, months: 84, priority: 10,
+      source: "Nissan Owner's Manual — 'Replace iridium spark plugs at 105,000 mi'",
+      notes: 'Turbo models may be shorter. 3.5L VQ35: 105K. 2.0L VC-Turbo: 60K.' },
+    { service: 'Coolant (Antifreeze)', make: 'Nissan', yearMin: 2018, mileage: 105000, months: 120, priority: 10,
+      source: "Nissan Owner's Manual — 'Replace Nissan Long-Life coolant at 105,000 mi or 10 years'" },
+    { service: 'Brake Fluid', make: 'Nissan', yearMin: 2018, mileage: 30000, months: 24, priority: 10,
+      source: "Nissan Owner's Manual — 'Replace brake fluid every 30,000 mi or 24 months'" },
+    { service: 'Automatic Transmission Fluid', make: 'Nissan', yearMin: 2018, mileage: 60000, months: 48, priority: 10,
+      source: "Nissan Owner's Manual — 'Replace CVT fluid (Xtronic) every 60,000 mi'",
+      notes: 'Most Nissan models use Xtronic CVT. Uses Nissan NS-3 CVT fluid.' },
+    { service: 'Drive Belt (Serpentine)', make: 'Nissan', yearMin: 2018, mileage: 60000, months: 60, priority: 10,
+      source: "Nissan Owner's Manual — 'Inspect drive belt at 60,000 mi'" },
+    { service: 'Brake Pads & Rotors Inspection', make: 'Nissan', yearMin: 2018, mileage: 10000, months: 12, priority: 10,
+      source: "Nissan Owner's Manual — 'Inspect brake pads, rotors, and brake lines every 10,000 mi'" },
+
+    // ── Nissan Rogue (2021-2024, T33) ───────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Nissan', model: 'Rogue', yearMin: 2021, yearMax: 2024, mileage: 5000, months: 6, priority: 20,
+      source: "Rogue Owner's Manual — Every 5,000 mi / 6 months (1.5L VC-Turbo, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Nissan', model: 'Rogue', yearMin: 2021, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Rogue Owner's Manual — 'Replace Xtronic CVT fluid every 60,000 mi'" },
+
+    // ── Nissan Rogue (2014-2020, T32) ───────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Nissan', model: 'Rogue', yearMin: 2014, yearMax: 2020, mileage: 5000, months: 6, priority: 20,
+      source: "Rogue Owner's Manual (T32) — Every 5,000 mi / 6 months (2.5L, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Nissan', model: 'Rogue', yearMin: 2014, yearMax: 2020, mileage: 60000, months: 48, priority: 20,
+      source: "Rogue Owner's Manual (T32) — 'Replace CVT fluid every 60,000 mi'" },
+
+    // ── Nissan Altima (2019-2024, L34) ──────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Nissan', model: 'Altima', yearMin: 2019, yearMax: 2024, mileage: 5000, months: 6, priority: 20,
+      source: "Altima Owner's Manual — Every 5,000 mi / 6 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Nissan', model: 'Altima', yearMin: 2019, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Altima Owner's Manual — 'Replace CVT fluid every 60,000 mi'" },
+    { service: 'Spark Plugs', make: 'Nissan', model: 'Altima', yearMin: 2019, yearMax: 2024, mileage: 60000, months: 60, priority: 20,
+      source: "Altima Owner's Manual — 'Replace spark plugs at 60,000 mi (2.0L VC-Turbo)'",
+      notes: '2.5L NA: 105,000 mi. 2.0L VC-Turbo: 60,000 mi.' },
+
+    // ── Nissan Pathfinder (2022-2024, R53) ──────────────────────
+    { service: 'Engine Oil & Filter', make: 'Nissan', model: 'Pathfinder', yearMin: 2022, yearMax: 2024, mileage: 5000, months: 6, priority: 20,
+      source: "Pathfinder Owner's Manual — Every 5,000 mi / 6 months (3.5L V6, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Nissan', model: 'Pathfinder', yearMin: 2022, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Pathfinder Owner's Manual — 'Replace 9-speed AT fluid every 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Nissan', model: 'Pathfinder', yearMin: 2022, yearMax: 2024, driveType: 'AWD', mileage: 60000, months: 48, priority: 25,
+      source: "Pathfinder Owner's Manual — 'Replace rear differential fluid at 60,000 mi (4WD)'" },
+
+    // ── Nissan Frontier (2022-2024, D41) ────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Nissan', model: 'Frontier', yearMin: 2022, yearMax: 2024, mileage: 5000, months: 6, priority: 20,
+      source: "Frontier Owner's Manual — Every 5,000 mi / 6 months (3.8L V6, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Nissan', model: 'Frontier', yearMin: 2022, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Frontier Owner's Manual — 'Replace 9-speed AT fluid every 60,000 mi'" },
+    { service: 'Transfer Case Fluid', make: 'Nissan', model: 'Frontier', yearMin: 2022, yearMax: 2024, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Frontier Owner's Manual — 'Replace transfer case fluid at 60,000 mi'" },
+    { service: 'Front Differential Fluid', make: 'Nissan', model: 'Frontier', yearMin: 2022, yearMax: 2024, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Frontier Owner's Manual — 'Replace front differential fluid at 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Nissan', model: 'Frontier', yearMin: 2022, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Frontier Owner's Manual — 'Replace rear differential fluid at 60,000 mi'" },
+
+
+    // ═════════════════════════════════════════════════════════════════
+    //  GMC — GM Owner's Manual (same platform as Chevrolet trucks)
+    //  Source: GMC Owner's Manual (2019-2024)
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── GMC Sierra 1500 (2019-2024, T1XX, same platform as Silverado) ─
+    { service: 'Engine Oil & Filter', make: 'GMC', model: 'Sierra 1500', yearMin: 2019, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Sierra Owner's Manual — Per OLM, max 7,500 mi / 12 months" },
+    { service: 'Tire Rotation', make: 'GMC', model: 'Sierra 1500', yearMin: 2019, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Sierra Owner's Manual — 'Rotate tires at every oil change'" },
+    { service: 'Automatic Transmission Fluid', make: 'GMC', model: 'Sierra 1500', yearMin: 2019, yearMax: 2024, mileage: 45000, months: 48, priority: 20,
+      source: "Sierra Owner's Manual — 'Replace AT fluid and filter at 45,000 mi'" },
+    { service: 'Transfer Case Fluid', make: 'GMC', model: 'Sierra 1500', yearMin: 2019, yearMax: 2024, driveType: '4WD', mileage: 45000, months: 48, priority: 25,
+      source: "Sierra Owner's Manual — 'Replace transfer case fluid at 45,000 mi'" },
+    { service: 'Front Differential Fluid', make: 'GMC', model: 'Sierra 1500', yearMin: 2019, yearMax: 2024, driveType: '4WD', mileage: 45000, months: 48, priority: 25,
+      source: "Sierra Owner's Manual — 'Replace front axle fluid at 45,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'GMC', model: 'Sierra 1500', yearMin: 2019, yearMax: 2024, mileage: 45000, months: 48, priority: 20,
+      source: "Sierra Owner's Manual — 'Replace rear axle fluid at 45,000 mi'" },
+    { service: 'Spark Plugs', make: 'GMC', model: 'Sierra 1500', yearMin: 2019, yearMax: 2024, mileage: 97500, months: 84, priority: 20,
+      source: "Sierra Owner's Manual — 'Replace spark plugs at 97,500 mi (5.3L/6.2L V8)'" },
+
+
+    // ═════════════════════════════════════════════════════════════════
+    //  MAZDA — Mazda Owner's Manual Maintenance Schedule
+    //  Source: Mazda Owner's Manual (2017-2024)
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── Mazda Universal (all models 2017+) ──────────────────────
+    { service: 'Engine Oil & Filter', make: 'Mazda', yearMin: 2017, mileage: 7500, months: 12, priority: 10,
+      source: "Mazda Owner's Manual — 'Replace engine oil and filter every 7,500 miles or 12 months (0W-20)'",
+      notes: 'Mazda Skyactiv engines use 0W-20 synthetic' },
+    { service: 'Tire Rotation', make: 'Mazda', yearMin: 2017, mileage: 7500, months: 12, priority: 10,
+      source: "Mazda Owner's Manual — 'Rotate tires every 7,500 miles'" },
+    { service: 'Engine Air Filter', make: 'Mazda', yearMin: 2017, mileage: 30000, months: 36, priority: 10,
+      source: "Mazda Owner's Manual — 'Replace engine air filter every 30,000 miles'" },
+    { service: 'Cabin Air Filter', make: 'Mazda', yearMin: 2017, mileage: 25000, months: 24, priority: 10,
+      source: "Mazda Owner's Manual — 'Replace cabin air filter every 25,000 mi'" },
+    { service: 'Spark Plugs', make: 'Mazda', yearMin: 2017, mileage: 75000, months: 72, priority: 10,
+      source: "Mazda Owner's Manual — 'Replace spark plugs every 75,000 miles (Skyactiv-G iridium)'" },
+    { service: 'Coolant (Antifreeze)', make: 'Mazda', yearMin: 2017, mileage: 120000, months: 120, priority: 10,
+      source: "Mazda Owner's Manual — 'Replace FL22 coolant at 120,000 mi or 10 years, then 60,000 mi / 4 yrs'" },
+    { service: 'Brake Fluid', make: 'Mazda', yearMin: 2017, mileage: 30000, months: 24, priority: 10,
+      source: "Mazda Owner's Manual — 'Replace brake fluid every 30,000 mi or 24 months'" },
+    { service: 'Automatic Transmission Fluid', make: 'Mazda', yearMin: 2017, mileage: 75000, months: 60, priority: 10,
+      source: "Mazda Owner's Manual — 'Replace Skyactiv-Drive AT fluid every 75,000 mi'" },
+
+    // ── Mazda CX-5 (2017-2024) ──────────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Mazda', model: 'CX-5', yearMin: 2017, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "CX-5 Owner's Manual — Every 7,500 mi / 12 months (Skyactiv-G 2.5L, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Mazda', model: 'CX-5', yearMin: 2017, yearMax: 2024, mileage: 75000, months: 60, priority: 20,
+      source: "CX-5 Owner's Manual — 'Replace Skyactiv-Drive AT fluid at 75,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Mazda', model: 'CX-5', yearMin: 2017, yearMax: 2024, driveType: 'AWD', mileage: 37500, months: 36, priority: 25,
+      source: "CX-5 Owner's Manual — 'Replace rear differential oil at 37,500 mi (i-ACTIV AWD)'" },
+
+    // ── Mazda CX-50 (2023-2024) ─────────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Mazda', model: 'CX-50', yearMin: 2023, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "CX-50 Owner's Manual — Every 7,500 mi / 12 months (2.5L/2.5T Skyactiv-G, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Mazda', model: 'CX-50', yearMin: 2023, yearMax: 2024, mileage: 75000, months: 60, priority: 20,
+      source: "CX-50 Owner's Manual — 'Replace Skyactiv-Drive AT fluid at 75,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Mazda', model: 'CX-50', yearMin: 2023, yearMax: 2024, driveType: 'AWD', mileage: 37500, months: 36, priority: 25,
+      source: "CX-50 Owner's Manual — 'Replace rear differential oil at 37,500 mi (i-ACTIV AWD)'" },
+
+    // ── Mazda3 (2019-2024) ──────────────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Mazda', model: 'Mazda3', yearMin: 2019, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Mazda3 Owner's Manual — Every 7,500 mi / 12 months (2.5L Skyactiv-G, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Mazda', model: 'Mazda3', yearMin: 2019, yearMax: 2024, mileage: 75000, months: 60, priority: 20,
+      source: "Mazda3 Owner's Manual — 'Replace Skyactiv-Drive AT fluid at 75,000 mi'" },
+
+
+    // ═════════════════════════════════════════════════════════════════
+    //  DODGE — Stellantis Owner's Manual Maintenance Schedule
+    //  Source: Dodge Owner's Manual (2015-2024)
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── Dodge Durango (2014-2024) ───────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Dodge', model: 'Durango', yearMin: 2014, yearMax: 2024, mileage: 10000, months: 12, priority: 20,
+      source: "Durango Owner's Manual — Per Oil Change Indicator, max 10,000 mi / 12 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Dodge', model: 'Durango', yearMin: 2014, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Durango Owner's Manual — 'Replace AT fluid at 60,000 mi (8-speed ZF)'" },
+    { service: 'Transfer Case Fluid', make: 'Dodge', model: 'Durango', yearMin: 2014, yearMax: 2024, driveType: 'AWD', mileage: 60000, months: 48, priority: 25,
+      source: "Durango Owner's Manual — 'Replace transfer case fluid at 60,000 mi'" },
+    { service: 'Front Differential Fluid', make: 'Dodge', model: 'Durango', yearMin: 2014, yearMax: 2024, driveType: 'AWD', mileage: 60000, months: 48, priority: 25,
+      source: "Durango Owner's Manual — 'Replace front axle fluid at 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Dodge', model: 'Durango', yearMin: 2014, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Durango Owner's Manual — 'Replace rear axle fluid at 60,000 mi'" },
+    { service: 'Spark Plugs', make: 'Dodge', model: 'Durango', yearMin: 2014, yearMax: 2024, mileage: 100000, months: 84, priority: 20,
+      source: "Durango Owner's Manual — 'Replace spark plugs at 100,000 mi (3.6L V6 / 5.7L HEMI)'" },
+
+    // ── Dodge Charger/Challenger (2015-2023) ────────────────────
+    { service: 'Engine Oil & Filter', make: 'Dodge', model: 'Charger', yearMin: 2015, yearMax: 2023, mileage: 10000, months: 12, priority: 20,
+      source: "Charger Owner's Manual — Per Oil Change Indicator, max 10,000 mi / 12 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Dodge', model: 'Charger', yearMin: 2015, yearMax: 2023, mileage: 60000, months: 48, priority: 20,
+      source: "Charger Owner's Manual — 'Replace AT fluid at 60,000 mi (8-speed ZF / TorqueFlite)'" },
+    { service: 'Spark Plugs', make: 'Dodge', model: 'Charger', yearMin: 2015, yearMax: 2023, mileage: 100000, months: 84, priority: 20,
+      source: "Charger Owner's Manual — 'Replace spark plugs at 100,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Dodge', model: 'Charger', yearMin: 2015, yearMax: 2023, mileage: 60000, months: 48, priority: 20,
+      source: "Charger Owner's Manual — 'Replace rear axle fluid at 60,000 mi'" },
+
+
+    // ═════════════════════════════════════════════════════════════════
+    //  FORD — Additional Popular Models
+    // ═════════════════════════════════════════════════════════════════
+
+    // ── Ford Escape (2020-2024, 4th Gen) ────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Ford', model: 'Escape', yearMin: 2020, yearMax: 2024, mileage: 10000, months: 12, priority: 20,
+      source: "Escape Owner's Manual — Per IOLM, max 10,000 mi / 12 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Ford', model: 'Escape', yearMin: 2020, yearMax: 2024, mileage: 150000, months: 120, priority: 20,
+      source: "Escape Owner's Manual — 'Replace 8-speed AT fluid at 150,000 mi (normal)'",
+      notes: 'Hybrid models: eCVT — no traditional AT fluid change.' },
+
+    // ── Ford Ranger (2019-2024) ─────────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Ford', model: 'Ranger', yearMin: 2019, yearMax: 2024, mileage: 10000, months: 12, priority: 20,
+      source: "Ranger Owner's Manual — Per IOLM, max 10,000 mi / 12 months (2.3L EcoBoost)" },
+    { service: 'Automatic Transmission Fluid', make: 'Ford', model: 'Ranger', yearMin: 2019, yearMax: 2024, mileage: 150000, months: 120, priority: 20,
+      source: "Ranger Owner's Manual — 'Replace 10-speed AT fluid at 150,000 mi (normal); 60,000 mi (severe)'" },
+    { service: 'Transfer Case Fluid', make: 'Ford', model: 'Ranger', yearMin: 2019, yearMax: 2024, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Ranger Owner's Manual — 'Replace transfer case fluid every 60,000 mi'" },
+    { service: 'Front Differential Fluid', make: 'Ford', model: 'Ranger', yearMin: 2019, yearMax: 2024, driveType: '4WD', mileage: 60000, months: 48, priority: 25,
+      source: "Ranger Owner's Manual — 'Replace front axle fluid every 60,000 mi'" },
+    { service: 'Rear Differential Fluid', make: 'Ford', model: 'Ranger', yearMin: 2019, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Ranger Owner's Manual — 'Replace rear axle fluid every 60,000 mi'" },
+
+    // ── Honda Odyssey (2018-2024) ───────────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Honda', model: 'Odyssey', yearMin: 2018, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Odyssey Owner's Manual — Per Maintenance Minder, approx. 7,500 mi (3.5L V6, 0W-20)" },
+    { service: 'Automatic Transmission Fluid', make: 'Honda', model: 'Odyssey', yearMin: 2018, yearMax: 2024, mileage: 60000, months: 48, priority: 20,
+      source: "Odyssey Owner's Manual — Sub-code 3, approx. every 60,000 mi",
+      notes: '10-speed or 9-speed ZF depending on year. Honda ATF DW-1.' },
+    { service: 'Spark Plugs', make: 'Honda', model: 'Odyssey', yearMin: 2018, yearMax: 2024, mileage: 105000, months: 84, priority: 20,
+      source: "Odyssey Owner's Manual — Sub-code 4, replace at 105,000 mi (iridium)" },
+
+    // ── Chevrolet Equinox (2018-2024) ───────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Chevrolet', model: 'Equinox', yearMin: 2018, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Equinox Owner's Manual — Per OLM, max 7,500 mi / 12 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Chevrolet', model: 'Equinox', yearMin: 2018, yearMax: 2024, mileage: 45000, months: 48, priority: 20,
+      source: "Equinox Owner's Manual — 'Replace 9-speed AT fluid at 45,000 mi'" },
+    { service: 'Spark Plugs', make: 'Chevrolet', model: 'Equinox', yearMin: 2018, yearMax: 2024, mileage: 60000, months: 60, priority: 20,
+      source: "Equinox Owner's Manual — 'Replace spark plugs at 60,000 mi (1.5T/2.0T)'" },
+
+    // ── Chevrolet Traverse (2018-2024) ──────────────────────────
+    { service: 'Engine Oil & Filter', make: 'Chevrolet', model: 'Traverse', yearMin: 2018, yearMax: 2024, mileage: 7500, months: 12, priority: 20,
+      source: "Traverse Owner's Manual — Per OLM, max 7,500 mi / 12 months" },
+    { service: 'Automatic Transmission Fluid', make: 'Chevrolet', model: 'Traverse', yearMin: 2018, yearMax: 2024, mileage: 45000, months: 48, priority: 20,
+      source: "Traverse Owner's Manual — 'Replace 9-speed AT fluid at 45,000 mi'" },
+    { service: 'Spark Plugs', make: 'Chevrolet', model: 'Traverse', yearMin: 2018, yearMax: 2024, mileage: 97500, months: 84, priority: 20,
+      source: "Traverse Owner's Manual — 'Replace spark plugs at 97,500 mi (3.6L V6)'" },
     { service: 'Transfer Case Fluid', driveType: '4WD', mileage: 45000, months: 36, priority: 5,
       source: 'Generic 4WD — most OEMs recommend 30,000-60,000 mi for transfer case fluid' },
     { service: 'Transfer Case Fluid', driveType: 'AWD', mileage: 45000, months: 36, priority: 5,
@@ -575,7 +1145,6 @@ async function seed() {
     `).run(uuidv4(), vehicleId);
 
     // Generate schedule from OEM data
-    const { generateScheduleForVehicle } = require('./services/scheduleEngine');
     generateScheduleForVehicle(vehicleId);
 
     console.log('  ✓ Demo vehicle: 2021 Toyota 4Runner 4WD @ 45,000 mi');

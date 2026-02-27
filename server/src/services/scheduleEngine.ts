@@ -60,7 +60,7 @@ export function generateScheduleForVehicle(vehicleId: string): void {
       id, vehicle.id, rule.service_definition_id,
       rule.mileage_interval, rule.month_interval,
       rule.is_combined, nextDueMileage, nextDueDate,
-      (rule as any).rule_source || null, (rule as any).rule_notes || null
+      (rule as any).source || (rule as any).rule_source || null, (rule as any).notes || (rule as any).rule_notes || null
     );
   }
 
