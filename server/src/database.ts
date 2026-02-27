@@ -84,6 +84,7 @@ export function initializeDatabase(): void {
       month_interval INTEGER,
       is_combined INTEGER DEFAULT 1,
       priority INTEGER DEFAULT 0,
+      source TEXT,
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (service_definition_id) REFERENCES service_definitions(id) ON DELETE CASCADE
@@ -100,6 +101,8 @@ export function initializeDatabase(): void {
       next_due_mileage INTEGER,
       next_due_date TEXT,
       status TEXT DEFAULT 'ok' CHECK(status IN ('ok', 'upcoming', 'overdue')),
+      source TEXT,
+      source_notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,

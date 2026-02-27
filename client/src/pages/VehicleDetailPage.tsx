@@ -247,6 +247,11 @@ export default function VehicleDetailPage() {
                         {s.next_due_mileage && s.next_due_date && ' • '}
                         {s.next_due_date && `Date: ${s.next_due_date}`}
                       </p>
+                      {s.oem_source && (
+                        <p className="text-[11px] text-brand-600 mt-1 leading-snug italic">
+                          📖 {s.oem_source}
+                        </p>
+                      )}
                     </div>
                     <span className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${
                       s.status === 'overdue' ? 'status-overdue' :

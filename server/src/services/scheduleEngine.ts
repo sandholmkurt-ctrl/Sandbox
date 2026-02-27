@@ -13,7 +13,8 @@ export function generateScheduleForVehicle(vehicleId: string): void {
 
   // Find matching rules — most specific first (highest priority wins)
   const rules = db.prepare(`
-    SELECT * FROM schedule_rules sr
+    SELECT sr.*, sd.name, sr.source as rule_source, sr.notes as rule_notes
+    FROM schedule_rules sr
     JOIN service_definitions sd ON sd.id = sr.service_definition_id AND sd.is_active = 1
     WHERE
       (sr.make IS NULL OR LOWER(sr.make) = LOWER(?))
@@ -53,12 +54,13 @@ export function generateScheduleForVehicle(vehicleId: string): void {
     const id = uuidv4();
     db.prepare(`
       INSERT INTO vehicle_schedules 
-        (id, vehicle_id, service_definition_id, mileage_interval, month_interval, is_combined, next_due_mileage, next_due_date, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok')
+        (id, vehicle_id, service_definition_id, mileage_interval, month_interval, is_combined, next_due_mileage, next_due_date, status, source, source_notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?)
     `).run(
       id, vehicle.id, rule.service_definition_id,
       rule.mileage_interval, rule.month_interval,
-      rule.is_combined, nextDueMileage, nextDueDate
+      rule.is_combined, nextDueMileage, nextDueDate,
+      (rule as any).rule_source || null, (rule as any).rule_notes || null
     );
   }
 
