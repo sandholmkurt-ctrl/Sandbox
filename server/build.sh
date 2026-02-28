@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
-echo "=== Installing server dependencies (skip native builds) ==="
-npm install --ignore-scripts
-
-echo "=== Rebuilding native modules ==="
-npm rebuild better-sqlite3
+echo "=== Installing server dependencies via yarn ==="
+yarn install --production=false
 
 echo "=== Compiling server TypeScript ==="
 ./node_modules/.bin/tsc
 
-echo "=== Installing client dependencies ==="
+echo "=== Installing client dependencies via yarn ==="
 cd ../client
-npm install --ignore-scripts
+yarn install --production=false
 
 echo "=== Compiling client TypeScript ==="
 ./node_modules/.bin/tsc -b
