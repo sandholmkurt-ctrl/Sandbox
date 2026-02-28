@@ -4,7 +4,7 @@ services:
     runtime: node
     region: oregon
     rootDir: server
-    buildCommand: npm install --include=dev && npx tsc && cd ../client && npm install --include=dev && npx tsc -b && npx vite build && cd ../server && npx tsx src/seed.ts
+    buildCommand: bash build.sh
     startCommand: npm start
     envVars:
       - key: NODE_ENV
