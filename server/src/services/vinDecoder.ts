@@ -28,7 +28,7 @@ export async function decodeVin(vin: string): Promise<VinDecodeResult | null> {
       return null;
     }
 
-    const data = await response.json();
+    const data: any = await response.json();
     const results = data.Results?.[0];
 
     if (!results || results.ErrorCode !== '0') {

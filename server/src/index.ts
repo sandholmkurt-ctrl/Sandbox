@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
 import cron from 'node-cron';
 import { initializeDatabase } from './database';
 import authRoutes from './routes/auth';
@@ -47,10 +48,19 @@ cron.schedule('0 6 * * *', () => {
   console.log('[Cron] Daily check complete.');
 });
 
+// ─── Serve React client in production ────────────────────
+const clientDist = path.resolve(__dirname, '..', '..', 'client', 'dist');
+app.use(express.static(clientDist));
+// All non-API routes fall through to React's index.html
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(clientDist, 'index.html'));
+});
+
 // ─── Start Server ───────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`API docs: http://localhost:${PORT}/api/health`);
+  console.log(`Serving client from ${clientDist}`);
 });
 
 export default app;

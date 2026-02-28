@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: vehicle-maintenance
+    runtime: node
+    region: oregon
+    rootDir: server
+    buildCommand: npm run render-build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SERVER_ROOT
+        value: /opt/render/project/src/server

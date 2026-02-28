@@ -1,15 +1,20 @@
 import Database from 'better-sqlite3';
+import type BetterSqlite3 from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-const DB_DIR = path.join(__dirname, '..', 'data');
+// Use process.cwd() so the path is stable in both dev (tsx) and prod (node dist/)
+const SERVER_ROOT = process.env.SERVER_ROOT || path.resolve(__dirname, '..');
+const DB_DIR = path.join(SERVER_ROOT, 'data');
 const DB_PATH = path.join(DB_DIR, 'vehicle_maintenance.db');
+
+export { DB_PATH };
 
 if (!fs.existsSync(DB_DIR)) {
   fs.mkdirSync(DB_DIR, { recursive: true });
 }
 
-const db = new Database(DB_PATH);
+const db: BetterSqlite3.Database = new Database(DB_PATH);
 
 // Enable WAL mode for better concurrent performance
 db.pragma('journal_mode = WAL');

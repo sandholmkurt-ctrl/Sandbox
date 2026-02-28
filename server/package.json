@@ -6,7 +6,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "render-build": "npm install && npm run build && cd ../client && npm install && npm run build && cd ../server && npm run seed"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -16,6 +17,7 @@
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
+    "tsx": "^4.19.2",
     "uuid": "^11.0.3",
     "zod": "^3.24.1"
   },
@@ -29,7 +31,6 @@
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^6.4.17",
     "@types/uuid": "^10.0.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

@@ -13,7 +13,7 @@ router.get('/decode/:vin', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const result = await decodeVin(vin);
+    const result = await decodeVin(vin as string);
     if (!result) {
       res.status(404).json({ error: 'Could not decode VIN. Please enter vehicle details manually.' });
       return;
