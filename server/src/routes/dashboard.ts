@@ -81,9 +81,13 @@ router.get('/', (req: AuthRequest, res: Response) => {
         yearServicesCount: costResult.services_count,
       },
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Dashboard error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({
+      error: 'Internal server error',
+      detail: err?.message || String(err),
+      stack: process.env.NODE_ENV !== 'production' ? err?.stack : undefined,
+    });
   }
 });
 

@@ -1,0 +1,90 @@
+graph TB
+    subgraph CLIENT["🖥️ React Frontend (Vite + Tailwind CSS)"]
+        direction TB
+        AUTH_UI["AuthContext\nLogin / Register"]
+        DASH["DashboardPage\nSummary cards, action items"]
+        VEHICLES["VehiclesPage / VehicleDetail\nAdd, view, manage vehicles"]
+        MAINT["MaintenanceMap\nVisual schedule grid"]
+        NOTIF["NotificationsPage"]
+        PROFILE["ProfilePage"]
+        ADMIN["AdminPage"]
+        API_CLIENT["api.ts — ApiClient\nToken management, fetch wrapper"]
+    end
+
+    subgraph SERVER["⚙️ Express Backend (TypeScript)"]
+        direction TB
+        CORS["CORS Middleware"]
+        AUTH_MW["Auth Middleware\nJWT verify → userId"]
+        
+        subgraph ROUTES["API Routes"]
+            R_AUTH["/api/auth\nlogin, register, me"]
+            R_DASH["/api/dashboard\nsummary, action items"]
+            R_VEH["/api/vehicles\nCRUD vehicles"]
+            R_MILE["/api/vehicles/:id/mileage\nmileage entries"]
+            R_SVC["/api/vehicles/:id/services\nservice history"]
+            R_NOTIF["/api/notifications\nuser notifications"]
+            R_VIN["/api/vin\nVIN decode"]
+            R_ADMIN["/api/admin\nadmin operations"]
+            R_HEALTH["/api/health\nhealth check"]
+        end
+
+        subgraph SERVICES["Business Logic"]
+            SCHED_ENGINE["scheduleEngine.ts\nMatch OEM rules → vehicle schedules\nUpdate overdue/upcoming status"]
+            NOTIF_SVC["notificationService.ts\nGenerate reminders"]
+        end
+
+        CRON["node-cron\nDaily 6 AM: update statuses\n& generate notifications"]
+        STATIC["express.static\nServes client/dist in production"]
+    end
+
+    subgraph DB["🗄️ SQLite Database (WAL mode)"]
+        direction TB
+        T_USERS["users"]
+        T_VEHICLES["vehicles"]
+        T_MILEAGE["mileage_entries"]
+        T_SVCDEF["service_definitions\n(28 types)"]
+        T_RULES["schedule_rules\n(349 OEM rules)"]
+        T_VSCHED["vehicle_schedules\n(per-vehicle items)"]
+        T_HISTORY["service_history"]
+        T_NOTIFS["notifications"]
+    end
+
+    subgraph DEPLOY["☁️ Render.com Deployment"]
+        GITHUB["GitHub Repo\nmain branch"]
+        RENDER["Render Web Service\nNode 20.18.1 / yarn"]
+        BUILD["build.sh\nyarn install → tsc → vite build → seed"]
+    end
+
+    AUTH_UI -->|"POST /api/auth/login"| R_AUTH
+    DASH -->|"GET /api/dashboard"| R_DASH
+    VEHICLES -->|"CRUD /api/vehicles"| R_VEH
+    NOTIF -->|"GET /api/notifications"| R_NOTIF
+    API_CLIENT -->|"Bearer JWT token"| CORS
+
+    CORS --> AUTH_MW
+    AUTH_MW --> ROUTES
+    R_DASH --> SCHED_ENGINE
+    CRON --> SCHED_ENGINE
+    CRON --> NOTIF_SVC
+
+    SCHED_ENGINE --> T_RULES
+    SCHED_ENGINE --> T_VSCHED
+    R_AUTH --> T_USERS
+    R_VEH --> T_VEHICLES
+    R_MILE --> T_MILEAGE
+    R_SVC --> T_HISTORY
+    R_NOTIF --> T_NOTIFS
+    NOTIF_SVC --> T_NOTIFS
+
+    GITHUB -->|"auto-deploy on push"| RENDER
+    RENDER --> BUILD
+
+    classDef clientStyle fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    classDef serverStyle fill:#fef3c7,stroke:#f59e0b,color:#78350f
+    classDef dbStyle fill:#d1fae5,stroke:#10b981,color:#064e3b
+    classDef deployStyle fill:#ede9fe,stroke:#8b5cf6,color:#4c1d95
+
+    class AUTH_UI,DASH,VEHICLES,MAINT,NOTIF,PROFILE,ADMIN,API_CLIENT clientStyle
+    class CORS,AUTH_MW,R_AUTH,R_DASH,R_VEH,R_MILE,R_SVC,R_NOTIF,R_VIN,R_ADMIN,R_HEALTH,SCHED_ENGINE,NOTIF_SVC,CRON,STATIC serverStyle
+    class T_USERS,T_VEHICLES,T_MILEAGE,T_SVCDEF,T_RULES,T_VSCHED,T_HISTORY,T_NOTIFS dbStyle
+    class GITHUB,RENDER,BUILD deployStyle
