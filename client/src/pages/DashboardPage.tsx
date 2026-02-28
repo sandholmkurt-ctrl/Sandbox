@@ -23,10 +23,15 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     api.get<DashboardData>('/dashboard')
       .then(setData)
-      .catch(console.error)
+      .catch((err) => {
+        console.error('Dashboard load error:', err);
+        setError(err?.message || err?.detail || 'Unknown error');
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -38,7 +43,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (!data) return <div className="text-center py-12 text-gray-500">Failed to load dashboard</div>;
+  if (!data) return <div className="text-center py-12 text-gray-500">Failed to load dashboard{error ? `: ${error}` : ''}</div>;
 
   const { vehicles, actionItems, recentServices, summary } = data;
 
