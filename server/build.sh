@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 set -e
 
-echo "=== Verifying server dependencies ==="
-ls node_modules/.bin/tsc && echo "tsc found" || { echo "ERROR: tsc not found"; exit 1; }
+echo "=== Installing server dependencies (skip native builds) ==="
+npm install --ignore-scripts
+
+echo "=== Rebuilding native modules ==="
+npm rebuild better-sqlite3
 
 echo "=== Compiling server TypeScript ==="
 ./node_modules/.bin/tsc
 
 echo "=== Installing client dependencies ==="
 cd ../client
-npm install
+npm install --ignore-scripts
 
 echo "=== Compiling client TypeScript ==="
 ./node_modules/.bin/tsc -b
