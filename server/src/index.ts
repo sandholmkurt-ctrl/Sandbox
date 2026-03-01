@@ -98,7 +98,42 @@ app.use('/api/admin', adminRoutes);
 
 // ─── Health Check ───────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  let dbAge = 'unknown';
+  let dbPersistent = false;
+  let dbFileSize = 0;
+  try {
+    const stat = fs.statSync(DB_PATH);
+    dbFileSize = stat.size;
+    const ageMs = Date.now() - stat.birthtimeMs;
+    const ageMins = Math.floor(ageMs / 60_000);
+    if (ageMins < 60) dbAge = `${ageMins}m`;
+    else if (ageMins < 1440) dbAge = `${Math.floor(ageMins / 60)}h ${ageMins % 60}m`;
+    else dbAge = `${Math.floor(ageMins / 1440)}d ${Math.floor((ageMins % 1440) / 60)}h`;
+    // If DB file is older than 10 minutes, it likely survived a deploy
+    dbPersistent = ageMins > 10;
+  } catch {}
+  let counts: any = {};
+  try {
+    counts = {
+      users: (db.prepare('SELECT COUNT(*) as c FROM users').get() as any).c,
+      vehicles: (db.prepare('SELECT COUNT(*) as c FROM vehicles').get() as any).c,
+      service_definitions: (db.prepare('SELECT COUNT(*) as c FROM service_definitions').get() as any).c,
+      schedule_rules: (db.prepare('SELECT COUNT(*) as c FROM schedule_rules').get() as any).c,
+    };
+  } catch {}
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    db: {
+      path: DB_PATH,
+      envVar: process.env.DB_PATH || '(not set — using fallback)',
+      fileExists: fs.existsSync(DB_PATH),
+      fileSize: dbFileSize,
+      fileAge: dbAge,
+      likelyPersistent: dbPersistent,
+      counts,
+    },
+  });
 });
 
 // ─── Debug / Diagnostics (no auth) ──────────────────────
