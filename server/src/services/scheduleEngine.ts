@@ -40,10 +40,26 @@ export function generateScheduleForVehicle(vehicleId: string): void {
   const now = new Date();
 
   for (const rule of uniqueRules) {
-    const nextDueMileage = rule.mileage_interval
-      ? vehicle.current_mileage + rule.mileage_interval
-      : null;
+    let nextDueMileage: number | null = null;
+    let lastServiceMileage: number | null = null;
 
+    if (rule.mileage_interval) {
+      if (vehicle.current_mileage > 0) {
+        // Assume all previous services were performed on schedule.
+        // Calculate the most recent interval boundary at or below current mileage.
+        lastServiceMileage =
+          Math.floor(vehicle.current_mileage / rule.mileage_interval) *
+          rule.mileage_interval;
+        nextDueMileage = lastServiceMileage + rule.mileage_interval;
+      } else {
+        // Brand-new vehicle (0 miles) — first service at the interval
+        nextDueMileage = rule.mileage_interval;
+      }
+    }
+
+    // Time-based: when adding a vehicle we don't know when services were
+    // last performed, only mileage.  Use now + month_interval so the
+    // vehicle doesn't start with time-based overdues.
     let nextDueDate: string | null = null;
     if (rule.month_interval) {
       const d = new Date(now);
@@ -51,17 +67,38 @@ export function generateScheduleForVehicle(vehicleId: string): void {
       nextDueDate = d.toISOString().split('T')[0];
     }
 
-    const id = uuidv4();
+    const schedId = uuidv4();
     db.prepare(`
       INSERT INTO vehicle_schedules 
         (id, vehicle_id, service_definition_id, mileage_interval, month_interval, is_combined, next_due_mileage, next_due_date, status, source, source_notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?)
     `).run(
-      id, vehicle.id, rule.service_definition_id,
+      schedId, vehicle.id, rule.service_definition_id,
       rule.mileage_interval, rule.month_interval,
       rule.is_combined, nextDueMileage, nextDueDate,
       (rule as any).source || (rule as any).rule_source || null, (rule as any).notes || (rule as any).rule_notes || null
     );
+
+    // ── Create assumed service-history record ───────────────────
+    // When a vehicle is added with mileage > 0, we assume the owner
+    // kept up with the schedule.  Insert ONE history record at the
+    // most recent interval milestone so the dashboard shows a non-empty
+    // service history and the "last service" baseline is recorded.
+    if (lastServiceMileage !== null && lastServiceMileage > 0) {
+      db.prepare(`
+        INSERT INTO service_history
+          (id, vehicle_id, vehicle_schedule_id, service_definition_id, completed_date, mileage_at_service, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        uuidv4(),
+        vehicle.id,
+        schedId,
+        rule.service_definition_id,
+        now.toISOString().split('T')[0],
+        lastServiceMileage,
+        `Assumed on-schedule service at ${lastServiceMileage.toLocaleString()} mi (auto-generated)`
+      );
+    }
   }
 
   // Run status evaluation
