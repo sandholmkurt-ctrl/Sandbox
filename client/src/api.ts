@@ -2,6 +2,7 @@ const BASE_URL = '/api';
 
 class ApiClient {
   private token: string | null = null;
+  private retrying = false;
 
   constructor() {
     // Load token from localStorage immediately so it's available
@@ -20,7 +21,7 @@ class ApiClient {
     return this.token;
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private async doFetch(path: string, options: RequestInit = {}): Promise<Response> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
@@ -30,11 +31,55 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(`${BASE_URL}${path}`, {
+    return fetch(`${BASE_URL}${path}`, {
       ...options,
       headers,
-      credentials: 'include',  // Always send cookies (survives proxy redirects)
     });
+  }
+
+  /**
+   * Make an API request with automatic retry.
+   *
+   * Corporate proxies (Zscaler/SiteMinder) can 307-redirect API requests
+   * to a gateway domain. Browsers strip the Authorization header on
+   * cross-origin redirects, causing a 401. After the proxy's auth dance
+   * completes, subsequent requests go through normally. So we retry once
+   * on 401 or network error to handle this transparently.
+   */
+  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    let response: Response;
+
+    try {
+      response = await this.doFetch(path, options);
+    } catch (networkErr) {
+      // Network error (e.g., CORS failure from proxy redirect).
+      // Wait briefly for proxy session to establish, then retry.
+      if (!this.retrying && this.token) {
+        this.retrying = true;
+        try {
+          await new Promise(r => setTimeout(r, 500));
+          response = await this.doFetch(path, options);
+        } catch (retryErr) {
+          this.retrying = false;
+          throw retryErr;
+        }
+        this.retrying = false;
+      } else {
+        throw networkErr;
+      }
+    }
+
+    // If 401, the proxy may have stripped the Authorization header during
+    // a redirect. The proxy session is now established, so retry once.
+    if (response.status === 401 && this.token && !this.retrying) {
+      this.retrying = true;
+      try {
+        await new Promise(r => setTimeout(r, 300));
+        response = await this.doFetch(path, options);
+      } finally {
+        this.retrying = false;
+      }
+    }
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));

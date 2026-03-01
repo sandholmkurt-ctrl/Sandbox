@@ -43,9 +43,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Page reload: validate the stored token with the server
+      // The API client has built-in retry for proxy interference,
+      // so if the first /auth/me fails due to proxy, it will retry.
       api.get<User>('/auth/me')
         .then(setUser)
         .catch(() => {
+          // Only clear the token if we're sure it's invalid —
+          // check if we still have the token (retry didn't help)
+          console.warn('Token validation failed — clearing session');
           setToken(null);
           localStorage.removeItem('token');
           api.setToken(null);

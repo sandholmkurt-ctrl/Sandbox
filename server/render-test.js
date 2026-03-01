@@ -329,6 +329,41 @@ function assertJson(r, path) {
   });
 
   // ═══════════════════════════════════════════════════════
+  console.log('\n─── Scenario 10: Proxy-resilience simulation ───');
+  // Simulates what happens when a corporate proxy strips the
+  // Authorization header. The server should still accept the
+  // request via cookie-based auth. And the client's retry logic
+  // should handle transient 401s.
+  // ═══════════════════════════════════════════════════════
+
+  await test('Proxy scenario: request WITHOUT header succeeds WITH cookie', async () => {
+    // Log in fresh to get both a token and a cookie
+    const loginR = await req('POST', '/api/auth/login', {
+      body: { email: DEMO_EMAIL, password: DEMO_PASS },
+    });
+    assert(loginR.status === 200, `Login failed: ${loginR.status}`);
+    const setCookie = loginR.headers.get('set-cookie') || '';
+    assert(setCookie.includes('auth_token='), 'No auth_token cookie set');
+    const cookie = setCookie.split(';')[0];
+
+    // Simulate proxy stripping the Authorization header: send ONLY the cookie
+    const dashR = await req('GET', '/api/dashboard', { cookies: cookie });
+    assertJson(dashR, '/api/dashboard (cookie-only)');
+    assert(dashR.status === 200,
+      `Dashboard with cookie-only auth failed: ${dashR.status} — ${dashR.text.substring(0, 200)}`);
+    console.log(`      → Cookie-only dashboard: ${dashR.json.summary.totalVehicles} vehicles ✓`);
+  });
+
+  await test('Proxy scenario: request WITHOUT header AND WITHOUT cookie → 401', async () => {
+    // No auth at all — should fail cleanly with JSON 401
+    const r = await req('GET', '/api/dashboard');
+    assert(r.status === 401, `Expected 401, got ${r.status}`);
+    assertJson(r, '/api/dashboard (no auth)');
+    assert(r.json.error === 'Authentication required',
+      `Expected "Authentication required", got "${r.json.error}"`);
+  });
+
+  // ═══════════════════════════════════════════════════════
   // Summary
   // ═══════════════════════════════════════════════════════
   console.log(`\n${'═'.repeat(50)}`);
