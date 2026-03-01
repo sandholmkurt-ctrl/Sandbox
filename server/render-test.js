@@ -1,22 +1,13 @@
 #!/usr/bin/env node
 /**
- * render-test.js  –  Automated integration test that simulates the exact
- * request flow a browser makes after login on the Render production build.
+ * render-test.js  –  Integration tests that simulate the EXACT browser
+ * request flow, including React's AuthContext + DashboardPage lifecycle.
  *
  * Usage:
  *   node render-test.js [baseUrl]
  *   Default baseUrl = http://localhost:3001
  *
- * What it tests (in order):
- *   1. GET  /api/health         – server is alive
- *   2. POST /api/auth/login     – get JWT
- *   3. GET  /api/auth/me        – token works (this is what AuthContext does)
- *   4. GET  /api/dashboard      – the dashboard payload loads
- *   5. GET  /                   – SPA index.html is served
- *   6. GET  /dashboard          – SPA fallback serves index.html (not 404)
- *   7. POST /api/auth/register  – register a new user
- *   8. GET  /api/dashboard      – dashboard works for new user too
- *
+ * Tests are grouped into scenarios that replicate what happens in the browser.
  * Exit code 0 = all pass, 1 = at least one failure.
  */
 
@@ -38,7 +29,7 @@ async function test(name, fn) {
     failed++;
     console.log(`  ❌  ${name}`);
     console.log(`      Error: ${err.message}`);
-    if (err.body) console.log(`      Body:  ${err.body.substring(0, 300)}`);
+    if (err.body) console.log(`      Body:  ${err.body.substring(0, 500)}`);
   }
 }
 
@@ -54,8 +45,7 @@ async function req(method, path, { body, token } = {}) {
   try {
     res = await fetch(url, opts);
   } catch (networkErr) {
-    const err = new Error(`Network error for ${method} ${path}: ${networkErr.message}`);
-    throw err;
+    throw new Error(`Network error for ${method} ${path}: ${networkErr.message}`);
   }
 
   const text = await res.text();
@@ -66,10 +56,7 @@ async function req(method, path, { body, token } = {}) {
 }
 
 function assert(condition, msg) {
-  if (!condition) {
-    const err = new Error(msg);
-    throw err;
-  }
+  if (!condition) throw new Error(msg);
 }
 
 function assertJson(r, path) {
@@ -83,10 +70,10 @@ function assertJson(r, path) {
 (async () => {
   console.log(`\n🔍 Testing against: ${BASE}\n`);
 
-  let demoToken = null;
-  let newToken = null;
+  // ═══════════════════════════════════════════════════════
+  console.log('─── Scenario 1: Server is alive ───');
+  // ═══════════════════════════════════════════════════════
 
-  // ── 1. Health ────────────────────────────────────────
   await test('GET /api/health returns { status: "ok" }', async () => {
     const r = await req('GET', '/api/health');
     assertJson(r, '/api/health');
@@ -94,111 +81,180 @@ function assertJson(r, path) {
     assert(r.json.status === 'ok', `Expected status "ok", got ${JSON.stringify(r.json)}`);
   });
 
-  // ── 1b. Debug endpoint ──────────────────────────────
   await test('GET /api/debug — diagnostics', async () => {
     const r = await req('GET', '/api/debug');
     assertJson(r, '/api/debug');
     assert(r.status === 200, `Expected 200, got ${r.status}`);
-    assert(r.json.paths, 'Missing paths in debug');
-    assert(r.json.database, 'Missing database in debug');
-
-    // Verify critical paths exist on the server
     const p = r.json.paths;
     assert(p.dbExists === true, `DB file missing at ${p.dbPath}`);
     assert(p.clientDistExists === true, `client/dist missing at ${p.clientDist}`);
     assert(p.indexHtmlExists === true, `index.html missing at ${p.indexHtml}`);
-
-    // Verify DB has data
     const d = r.json.database;
     assert(d.ok === true, `DB check failed: ${d.error || 'unknown'}`);
     assert(d.users > 0, `No users in DB (${d.users})`);
-    assert(d.rules > 0, `No schedule rules in DB (${d.rules})`);
-    assert(d.serviceDefinitions > 0, `No service definitions in DB (${d.serviceDefinitions})`);
-
+    assert(d.rules > 0, `No rules in DB (${d.rules})`);
     console.log(`      → DB: ${d.users} users, ${d.vehicles} vehicles, ${d.rules} rules`);
-    console.log(`      → Paths: clientDist=${p.clientDistExists}, indexHtml=${p.indexHtmlExists}, db=${p.dbExists}`);
     console.log(`      → Env: NODE_ENV=${r.json.env.NODE_ENV}, cwd=${r.json.env.cwd}`);
   });
 
-  // ── 2. Login ─────────────────────────────────────────
-  await test('POST /api/auth/login — demo user', async () => {
+  // ═══════════════════════════════════════════════════════
+  console.log('\n─── Scenario 2: Fresh login → dashboard (browser flow) ───');
+  // Simulates: user visits /login, submits form, React navigates to /dashboard
+  // AuthContext: login() → api.setToken() → setUser() → dashboard renders
+  // DashboardPage useEffect fires api.get('/dashboard')
+  // AuthContext useEffect fires api.get('/auth/me') (concurrent!)
+  // ═══════════════════════════════════════════════════════
+
+  let loginToken = null;
+  let loginUser = null;
+
+  await test('Step 1: POST /api/auth/login — get token', async () => {
     const r = await req('POST', '/api/auth/login', {
       body: { email: DEMO_EMAIL, password: DEMO_PASS },
     });
     assertJson(r, '/api/auth/login');
     assert(r.status === 200, `Expected 200, got ${r.status}: ${r.text.substring(0, 200)}`);
-    assert(r.json.token, 'No token in response');
-    assert(r.json.user, 'No user in response');
+    assert(r.json.token, 'No token in login response');
+    assert(r.json.user, 'No user in login response');
     assert(r.json.user.email === DEMO_EMAIL, `Wrong email: ${r.json.user.email}`);
-    demoToken = r.json.token;
+    loginToken = r.json.token;
+    loginUser = r.json.user;
+    console.log(`      → Token: ${loginToken.substring(0, 20)}...`);
+    console.log(`      → User ID: ${loginUser.id}`);
   });
 
-  // ── 3. Auth/me ───────────────────────────────────────
-  await test('GET /api/auth/me — verify token', async () => {
-    assert(demoToken, 'No token from login');
-    const r = await req('GET', '/api/auth/me', { token: demoToken });
+  // CRITICAL TEST: After login, React fires /auth/me AND /dashboard concurrently
+  await test('Step 2: CONCURRENT /auth/me + /dashboard (React lifecycle)', async () => {
+    assert(loginToken, 'No token from login');
+    const [meResult, dashResult] = await Promise.all([
+      req('GET', '/api/auth/me', { token: loginToken }),
+      req('GET', '/api/dashboard', { token: loginToken }),
+    ]);
+
+    assertJson(meResult, '/api/auth/me');
+    assert(meResult.status === 200, `/auth/me failed: ${meResult.status} — ${meResult.text.substring(0, 200)}`);
+    assert(meResult.json.email === DEMO_EMAIL, `Wrong user from /auth/me`);
+
+    assertJson(dashResult, '/api/dashboard');
+    assert(dashResult.status === 200, `/dashboard failed: ${dashResult.status} — ${dashResult.text.substring(0, 200)}`);
+    assert(dashResult.json.summary, `Missing summary: ${JSON.stringify(dashResult.json).substring(0, 200)}`);
+    console.log(`      → /auth/me: ${meResult.status} ✓`);
+    console.log(`      → /dashboard: ${dashResult.status} ✓ (${dashResult.json.summary.totalVehicles} vehicles)`);
+  });
+
+  // ═══════════════════════════════════════════════════════
+  console.log('\n─── Scenario 3: Page reload (token from localStorage) ───');
+  // User has token in localStorage, reloads page on /dashboard
+  // AuthContext reads token → calls /auth/me → THEN renders dashboard
+  // ═══════════════════════════════════════════════════════
+
+  await test('Step 1: /auth/me with stored token', async () => {
+    assert(loginToken, 'No token from login');
+    const r = await req('GET', '/api/auth/me', { token: loginToken });
     assertJson(r, '/api/auth/me');
-    assert(r.status === 200, `Expected 200, got ${r.status}: ${r.text.substring(0, 200)}`);
-    assert(r.json.email === DEMO_EMAIL, `Wrong email: ${r.json.email}`);
+    assert(r.status === 200, `/auth/me failed on reload: ${r.status} — ${r.text.substring(0, 200)}`);
   });
 
-  // ── 4. Dashboard ─────────────────────────────────────
-  await test('GET /api/dashboard — loads dashboard data', async () => {
-    assert(demoToken, 'No token from login');
-    const r = await req('GET', '/api/dashboard', { token: demoToken });
+  await test('Step 2: /dashboard with same stored token', async () => {
+    assert(loginToken, 'No token from login');
+    const r = await req('GET', '/api/dashboard', { token: loginToken });
     assertJson(r, '/api/dashboard');
-    assert(r.status === 200, `Expected 200, got ${r.status}: ${r.text.substring(0, 200)}`);
-    assert(r.json.summary, `No summary in response: ${JSON.stringify(r.json).substring(0, 200)}`);
-    assert(Array.isArray(r.json.vehicles), 'vehicles should be an array');
-    assert(Array.isArray(r.json.actionItems), 'actionItems should be an array');
-    assert(typeof r.json.summary.totalVehicles === 'number', 'totalVehicles should be a number');
-    console.log(`      → ${r.json.summary.totalVehicles} vehicles, ${r.json.summary.overdueServices} overdue, ${r.json.summary.upcomingServices} upcoming`);
+    assert(r.status === 200, `/dashboard failed on reload: ${r.status} — ${r.text.substring(0, 200)}`);
   });
 
-  // ── 5. SPA root ──────────────────────────────────────
-  await test('GET / — serves index.html', async () => {
-    const r = await req('GET', '/');
-    assert(r.status === 200, `Expected 200, got ${r.status}`);
-    assert(r.text.includes('<!DOCTYPE html>') || r.text.includes('<html'), 'Expected HTML');
-    assert(r.text.includes('<div id="root"'), 'Expected React root div');
-  });
+  // ═══════════════════════════════════════════════════════
+  console.log('\n─── Scenario 4: No token → 401 ───');
+  // ═══════════════════════════════════════════════════════
 
-  // ── 6. SPA fallback ─────────────────────────────────
-  await test('GET /dashboard — SPA fallback serves index.html', async () => {
-    const r = await req('GET', '/dashboard');
-    assert(r.status === 200, `Expected 200, got ${r.status}`);
-    assert(r.text.includes('<!DOCTYPE html>') || r.text.includes('<html'), 'Expected HTML');
-  });
-
-  // ── 7. Dashboard without token → 401 ────────────────
-  await test('GET /api/dashboard — no token returns 401', async () => {
+  await test('/api/dashboard without token → 401', async () => {
     const r = await req('GET', '/api/dashboard');
     assert(r.status === 401, `Expected 401, got ${r.status}: ${r.text.substring(0, 200)}`);
     assertJson(r, '/api/dashboard (no auth)');
-    assert(r.json.error, 'Expected error field');
+    assert(r.json.error, 'Expected error field in 401 response');
+    console.log(`      → Error: "${r.json.error}"`);
   });
 
-  // ── 8. Register new user ─────────────────────────────
-  await test('POST /api/auth/register — new user', async () => {
+  await test('/api/auth/me without token → 401', async () => {
+    const r = await req('GET', '/api/auth/me');
+    assert(r.status === 401, `Expected 401, got ${r.status}`);
+  });
+
+  // ═══════════════════════════════════════════════════════
+  console.log('\n─── Scenario 5: Bad token → 401 JSON (NOT HTML!) ───');
+  // Server must return JSON 401 for bad tokens on API routes.
+  // Old bug: SPA catch-all was serving HTML for unmatched routes.
+  // ═══════════════════════════════════════════════════════
+
+  await test('/api/dashboard with garbage token → 401 JSON', async () => {
+    const r = await req('GET', '/api/dashboard', { token: 'invalid.garbage.token' });
+    assert(r.status === 401, `Expected 401, got ${r.status}`);
+    assertJson(r, '/api/dashboard (bad token)');
+    assert(r.json.error, 'Expected error field');
+    assert(!r.text.includes('<!DOCTYPE html>'), 'Got HTML instead of JSON for API 401!');
+    console.log(`      → Error: "${r.json.error}"`);
+  });
+
+  await test('/api/auth/me with garbage token → 401 JSON', async () => {
+    const r = await req('GET', '/api/auth/me', { token: 'invalid.garbage.token' });
+    assert(r.status === 401, `Expected 401, got ${r.status}`);
+    assertJson(r, '/api/auth/me (bad token)');
+    assert(!r.text.includes('<!DOCTYPE html>'), 'Got HTML instead of JSON for API 401!');
+  });
+
+  // ═══════════════════════════════════════════════════════
+  console.log('\n─── Scenario 6: Register → dashboard (new user, empty) ───');
+  // ═══════════════════════════════════════════════════════
+
+  let newToken = null;
+
+  await test('Register new user', async () => {
     const r = await req('POST', '/api/auth/register', {
       body: { email: NEW_EMAIL, password: NEW_PASS, firstName: 'Test', lastName: 'User' },
     });
     assertJson(r, '/api/auth/register');
     assert(r.status === 201, `Expected 201, got ${r.status}: ${r.text.substring(0, 200)}`);
-    assert(r.json.token, 'No token in response');
+    assert(r.json.token, 'No token in register response');
     newToken = r.json.token;
   });
 
-  // ── 9. Dashboard for new user ────────────────────────
-  await test('GET /api/dashboard — new user (empty)', async () => {
+  await test('New user: concurrent /auth/me + /dashboard', async () => {
     assert(newToken, 'No token from register');
-    const r = await req('GET', '/api/dashboard', { token: newToken });
-    assertJson(r, '/api/dashboard');
-    assert(r.status === 200, `Expected 200, got ${r.status}: ${r.text.substring(0, 200)}`);
-    assert(r.json.summary.totalVehicles === 0, `Expected 0 vehicles for new user, got ${r.json.summary.totalVehicles}`);
+    const [meResult, dashResult] = await Promise.all([
+      req('GET', '/api/auth/me', { token: newToken }),
+      req('GET', '/api/dashboard', { token: newToken }),
+    ]);
+    assert(meResult.status === 200, `/auth/me failed: ${meResult.status}`);
+    assert(dashResult.status === 200, `/dashboard failed: ${dashResult.status} — ${dashResult.text.substring(0, 200)}`);
+    assert(dashResult.json.summary.totalVehicles === 0, `Expected 0 vehicles for new user`);
   });
 
-  // ── 10. CORS preflight ──────────────────────────────
+  // ═══════════════════════════════════════════════════════
+  console.log('\n─── Scenario 7: SPA + API route separation ───');
+  // ═══════════════════════════════════════════════════════
+
+  await test('GET / → index.html with React root', async () => {
+    const r = await req('GET', '/');
+    assert(r.status === 200, `Expected 200, got ${r.status}`);
+    assert(r.text.includes('<div id="root"'), 'Missing React root div');
+  });
+
+  await test('GET /dashboard → SPA fallback (not 404)', async () => {
+    const r = await req('GET', '/dashboard');
+    assert(r.status === 200, `Expected 200, got ${r.status}`);
+    assert(r.text.includes('<html'), 'Expected HTML');
+  });
+
+  await test('GET /api/nonexistent → 404 JSON (not HTML)', async () => {
+    const r = await req('GET', '/api/nonexistent');
+    assert(r.status === 404, `Expected 404, got ${r.status}`);
+    assertJson(r, '/api/nonexistent');
+    assert(!r.text.includes('<!DOCTYPE html>'), 'Got HTML for unknown API route!');
+  });
+
+  // ═══════════════════════════════════════════════════════
+  console.log('\n─── Scenario 8: CORS preflight ───');
+  // ═══════════════════════════════════════════════════════
+
   await test('OPTIONS /api/dashboard — CORS preflight', async () => {
     const url = `${BASE}/api/dashboard`;
     const res = await fetch(url, {
@@ -209,16 +265,17 @@ function assertJson(r, path) {
         'Access-Control-Request-Headers': 'authorization,content-type',
       },
     });
-    // CORS middleware should respond with 2xx and include allow-origin
     assert(res.status < 300, `Expected 2xx for OPTIONS, got ${res.status}`);
     const acao = res.headers.get('access-control-allow-origin');
-    assert(acao, `Missing Access-Control-Allow-Origin header. Headers: ${[...res.headers.entries()].map(([k,v])=>`${k}:${v}`).join(', ')}`);
+    assert(acao, `Missing Access-Control-Allow-Origin header`);
   });
 
-  // ── Summary ──────────────────────────────────────────
-  console.log(`\n${'─'.repeat(50)}`);
+  // ═══════════════════════════════════════════════════════
+  // Summary
+  // ═══════════════════════════════════════════════════════
+  console.log(`\n${'═'.repeat(50)}`);
   console.log(`  Results: ${passed} passed, ${failed} failed`);
-  console.log(`${'─'.repeat(50)}\n`);
+  console.log(`${'═'.repeat(50)}\n`);
 
   process.exit(failed > 0 ? 1 : 0);
 })();

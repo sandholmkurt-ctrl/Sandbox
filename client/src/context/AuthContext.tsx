@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import api from '../api';
 
 interface User {
@@ -25,9 +25,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
 
+  // Ref to skip redundant /auth/me call after login/register
+  // (login/register already provide the user, and the redundant
+  // /auth/me call can race with dashboard calls — if it fails,
+  // its catch handler was destructively clearing the token)
+  const skipMeRef = useRef(false);
+
   useEffect(() => {
     if (token) {
       api.setToken(token);
+
+      // After login/register, we already have the user — skip /auth/me
+      if (skipMeRef.current) {
+        skipMeRef.current = false;
+        setLoading(false);
+        return;
+      }
+
+      // Page reload: validate the stored token with the server
       api.get<User>('/auth/me')
         .then(setUser)
         .catch(() => {
@@ -37,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })
         .finally(() => setLoading(false));
     } else {
+      api.setToken(null);
       setLoading(false);
     }
   }, [token]);
@@ -45,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await api.post<{ token: string; user: User }>('/auth/login', { email, password });
     localStorage.setItem('token', res.token);
     api.setToken(res.token);
+    skipMeRef.current = true; // Don't re-validate — we already have user
     setToken(res.token);
     setUser(res.user);
   };
@@ -55,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     localStorage.setItem('token', res.token);
     api.setToken(res.token);
+    skipMeRef.current = true; // Don't re-validate — we already have user
     setToken(res.token);
     setUser(res.user);
   };

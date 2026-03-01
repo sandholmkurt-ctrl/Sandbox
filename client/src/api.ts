@@ -3,8 +3,21 @@ const BASE_URL = '/api';
 class ApiClient {
   private token: string | null = null;
 
+  constructor() {
+    // Load token from localStorage immediately so it's available
+    // before any React effects run — prevents race conditions where
+    // API calls fire before AuthContext's useEffect sets the token.
+    if (typeof window !== 'undefined') {
+      this.token = localStorage.getItem('token');
+    }
+  }
+
   setToken(token: string | null) {
     this.token = token;
+  }
+
+  getToken(): string | null {
+    return this.token;
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
