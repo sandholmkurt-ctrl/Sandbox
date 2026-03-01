@@ -173,6 +173,21 @@ app.get('*', (req, res) => {
 
 // ─── Start Server ───────────────────────────────────────
 async function start() {
+  // ── Diagnostic: log DB location for deploy troubleshooting ──
+  console.log('╔══════════════════════════════════════════════════════╗');
+  console.log('║  DATABASE DIAGNOSTICS                               ║');
+  console.log('╠══════════════════════════════════════════════════════╣');
+  console.log(`║  DB_PATH env    : ${process.env.DB_PATH || '(not set)'}`);
+  console.log(`║  Resolved path  : ${DB_PATH}`);
+  console.log(`║  File exists    : ${fs.existsSync(DB_PATH)}`);
+  console.log(`║  Dir exists     : ${fs.existsSync(path.dirname(DB_PATH))}`);
+  try {
+    const stat = fs.statSync(DB_PATH);
+    console.log(`║  File size      : ${stat.size} bytes`);
+    console.log(`║  Last modified  : ${stat.mtime.toISOString()}`);
+  } catch { console.log('║  File size      : (new DB)'); }
+  console.log('╚══════════════════════════════════════════════════════╝');
+
   // Run seed at startup (not build time) so the Render persistent disk
   // is available.  seed() is idempotent — skips if data already exists.
   try {
