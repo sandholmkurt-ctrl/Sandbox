@@ -3,6 +3,9 @@ services:
     name: vehicle-maintenance
     runtime: node
     region: oregon
+    repo: https://github.com/sandholmkurt-ctrl/Sandbox.git
+    branch: main
+    autoDeploy: true
     rootDir: server
     buildCommand: bash build.sh
     startCommand: npm start
