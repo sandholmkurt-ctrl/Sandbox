@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import db from '../database';
 import { RegisterSchema, LoginSchema, UpdateProfileSchema, User } from '../types';
 import { AuthRequest, authMiddleware, generateToken, AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth';
+import { updateVehicleStatuses } from '../services/scheduleEngine';
 
 const router = Router();
 
@@ -146,6 +147,14 @@ router.put('/me', authMiddleware, (req: AuthRequest, res: Response) => {
     values.push(req.userId);
 
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+
+    // Re-evaluate all vehicle statuses when reminder thresholds change
+    if (reminderLeadMiles !== undefined || reminderLeadDays !== undefined) {
+      const vehicles = db.prepare('SELECT id FROM vehicles WHERE user_id = ?').all(req.userId) as { id: string }[];
+      for (const v of vehicles) {
+        updateVehicleStatuses(v.id);
+      }
+    }
 
     res.json({ message: 'Profile updated' });
   } catch (err) {
