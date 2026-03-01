@@ -36,44 +36,27 @@ function getCategoryColor(category: string | null): string {
   return CATEGORY_COLORS[category || 'General'] || '#6b7280';
 }
 
-// Determine circle color per-column based on how mileageCol relates to currentMileage.
-// Past milestones (already completed) → green check.
-// The next-due milestone → red (overdue) or yellow (upcoming) based on proximity.
-// Future milestones beyond next-due → standard category color.
-function getCircleStyle(item: ScheduleItem, mileageCol: number, currentMileage: number, leadMiles: number = 500) {
+// Determine the ring (border) color for a circle based on its column mileage
+// relative to currentMileage. The circle interior always stays the category color;
+// only the thick border ring changes to indicate status.
+function getRingColor(item: ScheduleItem, mileageCol: number, currentMileage: number, leadMiles: number = 500): string | null {
   const interval = item.mileage_interval || 0;
   const nextDue = item.next_due_mileage;
 
-  // If we know the next_due_mileage from the schedule, use it for the exact milestone
   if (nextDue !== null) {
     if (mileageCol === nextDue) {
-      // This is THE next-due milestone
-      if (currentMileage >= nextDue) {
-        // Overdue — past due
-        return { bg: '#fca5a5', border: '#dc2626', textColor: '#991b1b', ring: true };
-      }
-      if (currentMileage >= nextDue - leadMiles) {
-        // Upcoming — within lead distance
-        return { bg: '#fde68a', border: '#d97706', textColor: '#92400e', ring: false };
-      }
+      if (currentMileage >= nextDue) return '#dc2626';            // red — overdue
+      if (currentMileage >= nextDue - leadMiles) return '#d97706'; // amber — upcoming
     }
     if (mileageCol < nextDue && mileageCol <= currentMileage) {
-      // Past milestone (before next due, already behind us) — completed (green)
-      return { bg: '#86efac', border: '#16a34a', textColor: '#14532d', ring: false };
+      return '#16a34a'; // green — completed
     }
   } else if (interval > 0) {
-    // Fallback: derive next-due from interval + current mileage
-    if (mileageCol <= currentMileage) {
-      return { bg: '#86efac', border: '#16a34a', textColor: '#14532d', ring: false };
-    }
-    if (mileageCol <= currentMileage + leadMiles) {
-      return { bg: '#fde68a', border: '#d97706', textColor: '#92400e', ring: false };
-    }
+    if (mileageCol <= currentMileage) return '#16a34a';
+    if (mileageCol <= currentMileage + leadMiles) return '#d97706';
   }
 
-  // Future milestone — standard category color
-  const color = getCategoryColor(item.category);
-  return { bg: color, border: color, textColor: '#ffffff', ring: false };
+  return null; // no status ring — future milestone
 }
 
 export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel, onServiceClick }: MaintenanceMapProps) {
@@ -138,19 +121,19 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
         </div>
         <div className="flex items-center gap-3 text-xs">
           <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-green-300 border-2 border-green-600 inline-block"></span>
+            <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-green-600 inline-block"></span>
             Completed
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-blue-600 inline-block"></span>
+            <span className="w-4 h-4 rounded-full bg-gray-400 inline-block"></span>
             Scheduled
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-yellow-400 border-2 border-yellow-600 inline-block"></span>
+            <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-yellow-600 inline-block"></span>
             Upcoming
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-red-300 border-2 border-red-600 inline-block"></span>
+            <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-red-600 inline-block"></span>
             Overdue
           </span>
         </div>
@@ -183,7 +166,8 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
                   style={{ paddingBottom: HEADER_HEIGHT + LEGEND_OFFSET }}
                 >
                   {items.map((item) => {
-                    const style = getCircleStyle(item, mileage, currentMileage);
+                    const catColor = getCategoryColor(item.category);
+                    const ringColor = getRingColor(item, mileage, currentMileage);
                     return (
                       <button
                         key={`${mileage}-${item.id}`}
@@ -194,10 +178,9 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
                         <div
                           className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-transform group-hover:scale-110 cursor-pointer"
                           style={{
-                            backgroundColor: style.bg,
-                            border: style.ring ? `2.5px solid ${style.border}` : `2px solid ${style.border}`,
-                            color: style.textColor,
-                            boxShadow: style.ring ? `0 0 0 1px ${style.border}` : 'none',
+                            backgroundColor: catColor,
+                            border: `3px solid ${ringColor || catColor}`,
+                            color: '#ffffff',
                           }}
                         >
                           {item.num}
