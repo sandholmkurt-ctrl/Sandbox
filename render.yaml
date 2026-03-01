@@ -6,10 +6,16 @@ services:
     rootDir: server
     buildCommand: bash build.sh
     startCommand: npm start
+    disk:
+      name: vehicle-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
       - key: SERVER_ROOT
         value: /opt/render/project/src/server
+      - key: DB_PATH
+        value: /var/data/vehicle_maintenance.db
       - key: NPM_CONFIG_INCLUDE
         value: dev

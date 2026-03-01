@@ -3,10 +3,11 @@ import type BetterSqlite3 from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-// Use process.cwd() so the path is stable in both dev (tsx) and prod (node dist/)
+// Allow an explicit DB_PATH env var (e.g. pointing at a Render persistent disk).
+// Fallback: <SERVER_ROOT>/data/vehicle_maintenance.db
 const SERVER_ROOT = process.env.SERVER_ROOT || path.resolve(__dirname, '..');
-const DB_DIR = path.join(SERVER_ROOT, 'data');
-const DB_PATH = path.join(DB_DIR, 'vehicle_maintenance.db');
+const DB_PATH = process.env.DB_PATH || path.join(SERVER_ROOT, 'data', 'vehicle_maintenance.db');
+const DB_DIR = path.dirname(DB_PATH);
 
 export { DB_PATH };
 

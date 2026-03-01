@@ -17,7 +17,24 @@ async function seed() {
   console.log('Initializing database...');
   initializeDatabase();
 
-  // Clear old data so we can re-seed from scratch
+  // ── Check if reference data already exists ─────────────────────
+  // If service_definitions already has rows, this is a re-deploy
+  // with a persistent DB — skip destructive re-seed to preserve
+  // user data (vehicles, schedules, history, etc.).
+  const existingDefs = db.prepare('SELECT COUNT(*) as cnt FROM service_definitions').get() as { cnt: number };
+  if (existingDefs.cnt > 0) {
+    console.log(`Database already has ${existingDefs.cnt} service definitions — skipping seed to preserve data.`);
+    // Still ensure demo user exists
+    await ensureDemoUser();
+    console.log('\n════════════════════════════════════════════════════');
+    console.log('  ✓ Seed skipped (data persisted from previous deploy)');
+    console.log('════════════════════════════════════════════════════');
+    return;
+  }
+
+  console.log('Fresh database detected — seeding reference data...');
+
+  // Clear any partial data so we seed from scratch
   db.prepare('DELETE FROM vehicle_schedules').run();
   db.prepare('DELETE FROM schedule_rules').run();
   db.prepare('DELETE FROM service_definitions').run();
@@ -1104,10 +1121,22 @@ async function seed() {
   console.log('    Sources: Toyota Warranty & Maintenance Guide, Ford Scheduled Maintenance Guide,');
   console.log("             Honda Maintenance Minder / Owner's Manual, GM/Chevrolet Owner's Manual");
 
-  // ═══════════════════════════════════════════════════════════════════
-  //  ADMIN USER
-  // ═══════════════════════════════════════════════════════════════════
-  console.log('Creating admin user...');
+  // Ensure admin + demo users exist
+  await ensureDemoUser();
+
+  console.log('\n════════════════════════════════════════════════════');
+  console.log("  ✓ Seed complete!");
+  console.log("  Data sourced from manufacturer owner's manuals.");
+  console.log('════════════════════════════════════════════════════');
+}
+
+/**
+ * Ensure admin and demo users exist. Safe to call multiple times —
+ * only creates users/vehicles that are missing.
+ */
+async function ensureDemoUser(): Promise<void> {
+  // ── Admin user ──
+  console.log('Ensuring admin user...');
   const adminExists = db.prepare("SELECT id FROM users WHERE email = 'admin@vehiclemaint.com'").get();
   if (!adminExists) {
     const passwordHash = await bcrypt.hash('Admin123!', 12);
@@ -1115,14 +1144,14 @@ async function seed() {
       INSERT INTO users (id, email, password_hash, first_name, last_name, is_admin)
       VALUES (?, 'admin@vehiclemaint.com', ?, 'System', 'Admin', 1)
     `).run(uuidv4(), passwordHash);
-    console.log('  ✓ Admin: admin@vehiclemaint.com / Admin123!');
+    console.log('  ✓ Created admin: admin@vehiclemaint.com / Admin123!');
+  } else {
+    console.log('  ✓ Admin already exists');
   }
 
-  // ═══════════════════════════════════════════════════════════════════
-  //  DEMO USER with sample vehicle
-  // ═══════════════════════════════════════════════════════════════════
-  console.log('Creating demo user...');
-  const demoExists = db.prepare("SELECT id FROM users WHERE email = 'demo@example.com'").get();
+  // ── Demo user + sample vehicle ──
+  console.log('Ensuring demo user...');
+  const demoExists = db.prepare("SELECT id FROM users WHERE email = 'demo@example.com'").get() as { id: string } | undefined;
   if (!demoExists) {
     const passwordHash = await bcrypt.hash('Demo1234!', 12);
     const userId = uuidv4();
@@ -1130,9 +1159,9 @@ async function seed() {
       INSERT INTO users (id, email, password_hash, first_name, last_name, is_admin)
       VALUES (?, 'demo@example.com', ?, 'Demo', 'User', 0)
     `).run(userId, passwordHash);
-    console.log('  ✓ Demo user: demo@example.com / Demo1234!');
+    console.log('  ✓ Created demo user: demo@example.com / Demo1234!');
 
-    // Add a sample 4Runner
+    // Add a sample 4Runner only for fresh demo user
     const vehicleId = uuidv4();
     db.prepare(`
       INSERT INTO vehicles (id, user_id, year, make, model, engine, drive_type, current_mileage)
@@ -1148,12 +1177,9 @@ async function seed() {
     generateScheduleForVehicle(vehicleId);
 
     console.log('  ✓ Demo vehicle: 2021 Toyota 4Runner 4WD @ 45,000 mi');
+  } else {
+    console.log('  ✓ Demo user already exists');
   }
-
-  console.log('\n════════════════════════════════════════════════════');
-  console.log("  ✓ Seed complete!");
-  console.log("  Data sourced from manufacturer owner's manuals.");
-  console.log('════════════════════════════════════════════════════');
 }
 
 seed().catch(console.error);
