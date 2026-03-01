@@ -60,7 +60,7 @@ function getRingColor(item: ScheduleItem, mileageCol: number, currentMileage: nu
 }
 
 export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel, onServiceClick }: MaintenanceMapProps) {
-  const { serviceList, mileageColumns, grid, maxMileage } = useMemo(() => {
+  const { serviceList, mileageColumns, grid, maxMileage, axisStep } = useMemo(() => {
     // Get unique services with mileage intervals, assign index numbers
     const withInterval = schedule.filter(s => s.mileage_interval && s.mileage_interval > 0);
     // Sort by interval (most frequent first, like the image)
@@ -72,13 +72,25 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
       num: i + 1,
     }));
 
-    // Determine max mileage for the map (at least 100K, or round up from current)
-    const maxFromCurrent = Math.max(100000, Math.ceil((currentMileage + 50000) / 5000) * 5000);
-    const maxMileage = maxFromCurrent;
+    // Compute the axis step from the vehicle's own intervals.
+    // Use the GCD of all mileage_intervals so every service lines up
+    // perfectly with a column (e.g. 7 500 → axis at 7.5K, 15K, 22.5K …).
+    function gcd(a: number, b: number): number {
+      while (b) { [a, b] = [b, a % b]; }
+      return a;
+    }
+    const intervals = serviceList.map(s => s.mileage_interval!);
+    const axisStep = intervals.length > 0
+      ? intervals.reduce((g, v) => gcd(g, v))
+      : 5000;
 
-    // Generate mileage columns (every 5K)
+    // Determine max mileage for the map (at least 100K, round up to axisStep)
+    const maxMileage = Math.max(100000, Math.ceil((currentMileage + 50000) / axisStep) * axisStep);
+
+    // Generate columns at every axisStep — every service multiple will land
+    // on a column because axisStep divides every interval evenly.
     const columns: number[] = [];
-    for (let m = 0; m <= maxMileage; m += 5000) {
+    for (let m = 0; m <= maxMileage; m += axisStep) {
       columns.push(m);
     }
 
@@ -98,7 +110,7 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
       grid.set(col, dueHere);
     }
 
-    return { serviceList, mileageColumns: columns, grid, maxMileage };
+    return { serviceList, mileageColumns: columns, grid, maxMileage, axisStep };
   }, [schedule, currentMileage]);
 
   if (serviceList.length === 0) {
@@ -117,7 +129,7 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-bold text-gray-900">Maintenance Map</h3>
-          <p className="text-xs text-gray-500">{vehicleLabel} • Mileage intervals from 0 to {(maxMileage / 1000).toFixed(0)}K</p>
+          <p className="text-xs text-gray-500">{vehicleLabel} • Every {axisStep >= 1000 ? `${(axisStep / 1000)}K` : axisStep.toLocaleString()} mi to {(maxMileage / 1000).toFixed(0)}K</p>
         </div>
         <div className="flex items-center gap-3 text-xs">
           <span className="flex items-center gap-1.5">
@@ -152,7 +164,7 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
           {/* Column stacks */}
           {mileageColumns.map((mileage) => {
             const items = grid.get(mileage) || [];
-            const isCurrentRange = currentMileage >= mileage && currentMileage < mileage + 5000;
+            const isCurrentRange = currentMileage >= mileage && currentMileage < mileage + axisStep;
 
             return (
               <div
@@ -201,7 +213,7 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
                 <div className={`absolute bottom-0 text-center ${isCurrentRange ? 'font-bold text-brand-700' : 'text-gray-400'}`}>
                   <div className="w-full h-px bg-gray-200 mb-1"></div>
                   <span className="text-[10px] leading-none whitespace-nowrap">
-                    {mileage === 0 ? '0' : `${mileage / 1000}K`}
+                    {mileage === 0 ? '0' : mileage % 1000 === 0 ? `${mileage / 1000}K` : `${(mileage / 1000).toFixed(1)}K`}
                   </span>
                 </div>
               </div>
