@@ -33,7 +33,6 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/cookie-parser": "^1.4.10",
-    "puppeteer": "^24.37.5"
+    "@types/cookie-parser": "^1.4.10"
   }
 }
