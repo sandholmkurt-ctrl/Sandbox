@@ -104,9 +104,9 @@ router.post('/', (req: AuthRequest, res: Response) => {
 
     const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
     res.status(201).json(vehicle);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Add vehicle error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', detail: err?.message || String(err) });
   }
 });
 
