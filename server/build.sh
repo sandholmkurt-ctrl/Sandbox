@@ -2,7 +2,7 @@
 set -e
 
 echo "=== Installing server dependencies via yarn ==="
-yarn install --production=false
+yarn install --production=false --ignore-engines
 
 echo "=== Compiling server TypeScript ==="
 ./node_modules/.bin/tsc
