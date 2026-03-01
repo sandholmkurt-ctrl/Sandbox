@@ -33,6 +33,7 @@ class ApiClient {
     const response = await fetch(`${BASE_URL}${path}`, {
       ...options,
       headers,
+      credentials: 'include',  // Always send cookies (survives proxy redirects)
     });
 
     if (!response.ok) {

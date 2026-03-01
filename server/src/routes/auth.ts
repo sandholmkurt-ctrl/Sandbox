@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../database';
 import { RegisterSchema, LoginSchema, UpdateProfileSchema, User } from '../types';
-import { AuthRequest, authMiddleware, generateToken } from '../middleware/auth';
+import { AuthRequest, authMiddleware, generateToken, AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth';
 
 const router = Router();
 
@@ -33,6 +33,9 @@ router.post('/register', async (req: AuthRequest, res: Response) => {
     `).run(id, email, passwordHash, firstName || null, lastName || null);
 
     const token = generateToken(id, false);
+
+    // Set HttpOnly cookie (survives proxy redirects)
+    res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
 
     res.status(201).json({
       token,
@@ -68,6 +71,9 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
     }
 
     const token = generateToken(user.id, !!user.is_admin);
+
+    // Set HttpOnly cookie (survives proxy redirects)
+    res.cookie(AUTH_COOKIE_NAME, token, AUTH_COOKIE_OPTIONS);
 
     res.json({
       token,
@@ -166,6 +172,12 @@ router.post('/password-reset', (req: AuthRequest, res: Response) => {
     console.error('Password reset error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// ─── Logout (clear auth cookie) ─────────────────────────
+router.post('/logout', (_req, res: Response) => {
+  res.clearCookie(AUTH_COOKIE_NAME, { path: '/' });
+  res.json({ message: 'Logged out' });
 });
 
 export default router;

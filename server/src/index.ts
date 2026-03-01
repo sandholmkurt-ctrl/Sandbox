@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
 import cron from 'node-cron';
@@ -24,6 +25,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+app.use(cookieParser());
 
 // ─── Request Logger (production) ─────────────────────────
 app.use((req, _res, next) => {

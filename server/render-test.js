@@ -33,11 +33,12 @@ async function test(name, fn) {
   }
 }
 
-async function req(method, path, { body, token } = {}) {
+async function req(method, path, { body, token, cookies } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (cookies) headers['Cookie'] = cookies;
 
-  const opts = { method, headers };
+  const opts = { method, headers, redirect: 'manual' };
   if (body) opts.body = JSON.stringify(body);
 
   const url = `${BASE}${path}`;
@@ -229,7 +230,64 @@ function assertJson(r, path) {
   });
 
   // ═══════════════════════════════════════════════════════
-  console.log('\n─── Scenario 7: SPA + API route separation ───');
+  console.log('\n─── Scenario 7: Cookie-based auth (proxy redirect survival) ───');
+  // This tests the critical fix: when a corporate proxy strips
+  // the Authorization header during a 307 redirect, the auth_token
+  // cookie still works as a fallback.
+  // ═══════════════════════════════════════════════════════
+
+  let loginCookies = null;
+
+  await test('Login returns Set-Cookie with auth_token', async () => {
+    const r = await req('POST', '/api/auth/login', {
+      body: { email: DEMO_EMAIL, password: DEMO_PASS },
+    });
+    assertJson(r, '/api/auth/login');
+    assert(r.status === 200, `Expected 200, got ${r.status}`);
+
+    const setCookieHeader = r.headers.get('set-cookie');
+    assert(setCookieHeader, 'No Set-Cookie header in login response');
+    assert(setCookieHeader.includes('auth_token='), `Set-Cookie missing auth_token: ${setCookieHeader}`);
+    console.log(`      → Set-Cookie: ${setCookieHeader.substring(0, 80)}...`);
+
+    // Extract the cookie for subsequent requests
+    loginCookies = setCookieHeader.split(';')[0]; // e.g., "auth_token=eyJ..."
+  });
+
+  await test('Cookie-only auth: /dashboard WITHOUT header, WITH cookie → 200', async () => {
+    assert(loginCookies, 'No cookie from login');
+    // Send request with ONLY the cookie (no Authorization header)
+    // This simulates what happens after a proxy strips the header
+    const r = await req('GET', '/api/dashboard', { cookies: loginCookies });
+    assertJson(r, '/api/dashboard (cookie auth)');
+    assert(r.status === 200, `/dashboard with cookie-only auth failed: ${r.status} — ${r.text.substring(0, 200)}`);
+    assert(r.json.summary, 'Missing summary in cookie-auth dashboard response');
+    console.log(`      → Dashboard loaded via cookie-only auth ✓ (${r.json.summary.totalVehicles} vehicles)`);
+  });
+
+  await test('Cookie-only auth: /auth/me WITHOUT header, WITH cookie → 200', async () => {
+    assert(loginCookies, 'No cookie from login');
+    const r = await req('GET', '/api/auth/me', { cookies: loginCookies });
+    assertJson(r, '/auth/me (cookie auth)');
+    assert(r.status === 200, `/auth/me with cookie-only auth failed: ${r.status} — ${r.text.substring(0, 200)}`);
+    assert(r.json.email === DEMO_EMAIL, `Wrong email from cookie auth: ${r.json.email}`);
+    console.log(`      → /auth/me via cookie auth: ${r.json.email} ✓`);
+  });
+
+  await test('Logout clears auth_token cookie', async () => {
+    const r = await req('POST', '/api/auth/logout', { cookies: loginCookies });
+    assertJson(r, '/api/auth/logout');
+    assert(r.status === 200, `Expected 200, got ${r.status}`);
+    const setCookie = r.headers.get('set-cookie') || '';
+    // Express clears cookies with Expires=epoch or Max-Age=0
+    const cookieCleared = setCookie.includes('auth_token=') &&
+      (setCookie.includes('Max-Age=0') || setCookie.includes('Expires=Thu, 01 Jan 1970'));
+    assert(cookieCleared, `Logout should clear cookie. Set-Cookie: ${setCookie}`);
+    console.log(`      → Cookie cleared ✓`);
+  });
+
+  // ═══════════════════════════════════════════════════════
+  console.log('\n─── Scenario 8: SPA + API route separation ───');
   // ═══════════════════════════════════════════════════════
 
   await test('GET / → index.html with React root', async () => {
@@ -252,7 +310,7 @@ function assertJson(r, path) {
   });
 
   // ═══════════════════════════════════════════════════════
-  console.log('\n─── Scenario 8: CORS preflight ───');
+  console.log('\n─── Scenario 9: CORS preflight ───');
   // ═══════════════════════════════════════════════════════
 
   await test('OPTIONS /api/dashboard — CORS preflight', async () => {

@@ -82,6 +82,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api.setToken(null);
     setToken(null);
     setUser(null);
+    // Clear server-side auth cookie
+    api.post('/auth/logout').catch(() => {});
   };
 
   return (
