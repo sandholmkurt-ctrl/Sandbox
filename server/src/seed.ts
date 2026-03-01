@@ -1182,4 +1182,13 @@ async function ensureDemoUser(): Promise<void> {
   }
 }
 
-seed().catch(console.error);
+// Export for use from server startup
+export { seed };
+
+// Auto-run when called directly (e.g. `npx tsx src/seed.ts`)
+const isDirectRun = require.main === module ||
+  process.argv[1]?.endsWith('seed.ts') ||
+  process.argv[1]?.endsWith('seed.js');
+if (isDirectRun) {
+  seed().catch(console.error);
+}

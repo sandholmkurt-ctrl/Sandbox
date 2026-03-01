@@ -17,8 +17,6 @@ echo "=== Compiling client TypeScript ==="
 echo "=== Building client with Vite ==="
 ./node_modules/.bin/vite build
 
-echo "=== Seeding database ==="
-cd ../server
-./node_modules/.bin/tsx src/seed.ts
-
 echo "=== Build complete! ==="
+echo "(Database seeding happens at server startup, not build time,"
+echo " so the Render persistent disk is available.)"

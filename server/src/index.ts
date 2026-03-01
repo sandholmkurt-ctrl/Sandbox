@@ -14,6 +14,7 @@ import vinRoutes from './routes/vin';
 import adminRoutes from './routes/admin';
 import { updateAllVehicleStatuses } from './services/scheduleEngine';
 import { generateNotifications } from './services/notificationService';
+import { seed } from './seed';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -171,10 +172,22 @@ app.get('*', (req, res) => {
 });
 
 // ─── Start Server ───────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`API docs: http://localhost:${PORT}/api/health`);
-  console.log(`Serving client from ${clientDist}`);
-});
+async function start() {
+  // Run seed at startup (not build time) so the Render persistent disk
+  // is available.  seed() is idempotent — skips if data already exists.
+  try {
+    await seed();
+  } catch (err) {
+    console.error('[Boot] Seed failed:', err);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`API docs: http://localhost:${PORT}/api/health`);
+    console.log(`Serving client from ${clientDist}`);
+  });
+}
+
+start();
 
 export default app;
