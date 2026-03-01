@@ -29,21 +29,39 @@ export const AUTH_COOKIE_NAME = 'auth_token';
 
 /**
  * Extract the JWT token from the request.
- * Checks (in order): Authorization header → auth_token cookie.
- * This dual approach ensures auth works even when corporate proxies
- * (e.g., Zscaler/SiteMinder) strip Authorization headers during 307 redirects.
+ * Checks (in order):
+ *   1. Authorization header  (standard approach)
+ *   2. HttpOnly cookie        (survives some proxy scenarios)
+ *   3. Query parameter _token (survives 307 redirect chains — the proxy
+ *      encodes the original URL including query params in its redirect-back)
+ *   4. Body field _authToken  (POST-body "tunnel" — 307 preserves POST body)
+ *
+ * This multi-source approach ensures auth works even when corporate proxies
+ * (Zscaler / SiteMinder) strip Authorization headers during 307 redirects.
  */
 function extractToken(req: Request): string | null {
-  // 1. Check Authorization header (standard approach)
+  // 1. Authorization header
   const header = req.headers.authorization;
   if (header && header.startsWith('Bearer ')) {
     return header.split(' ')[1];
   }
 
-  // 2. Fallback: check HttpOnly cookie (survives proxy redirects)
+  // 2. HttpOnly cookie
   const cookieToken = req.cookies?.[AUTH_COOKIE_NAME];
   if (cookieToken) {
     return cookieToken;
+  }
+
+  // 3. Query parameter (survives proxy 307 redirect chains)
+  const queryToken = (req.query as Record<string, string>)?._token;
+  if (queryToken && typeof queryToken === 'string') {
+    return queryToken;
+  }
+
+  // 4. POST body field (tunnel mode — 307 preserves POST body)
+  const bodyToken = req.body?._authToken;
+  if (bodyToken && typeof bodyToken === 'string') {
+    return bodyToken;
   }
 
   return null;

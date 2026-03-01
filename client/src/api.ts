@@ -1,15 +1,37 @@
 const BASE_URL = '/api';
 
+/**
+ * Multi-strategy API client that survives corporate proxy interference.
+ *
+ * Corporate proxies (Zscaler / SiteMinder) 307-redirect API requests to a
+ * gateway domain.  Browsers strip the Authorization header on cross-origin
+ * redirects (HTTP spec).  This client uses THREE fallback strategies:
+ *
+ *   1. Normal fetch with Authorization header  + `_token` query-param.
+ *      The query-param survives 307 redirects because the proxy encodes
+ *      the original URL (including query string) in its redirect-back URL.
+ *
+ *   2. Retry with exponential back-off (the proxy session may be
+ *      established after the first attempt, allowing the retry through).
+ *
+ *   3. POST-body "tunnel": re-send the request as POST with the token in
+ *      the JSON body.  HTTP 307 preserves the POST method and body, so
+ *      the token reaches the server even through a redirect chain.
+ */
 class ApiClient {
   private token: string | null = null;
-  private retrying = false;
 
   constructor() {
-    // Load token from localStorage immediately so it's available
-    // before any React effects run — prevents race conditions where
-    // API calls fire before AuthContext's useEffect sets the token.
     if (typeof window !== 'undefined') {
       this.token = localStorage.getItem('token');
+      // Fire-and-forget warm-up:  trigger any proxy auth flow early
+      // so it doesn't interfere with real requests.  Image loads and
+      // no-cors fetches are not subject to CORS restrictions.
+      try {
+        const img = new Image();
+        img.src = `/api/health?_warm=${Date.now()}`;
+        fetch('/api/health', { mode: 'no-cors' }).catch(() => {});
+      } catch { /* ignore */ }
     }
   }
 
@@ -21,72 +43,97 @@ class ApiClient {
     return this.token;
   }
 
+  // ── Strategy 1: normal fetch with header + query-param token ──
   private async doFetch(path: string, options: RequestInit = {}): Promise<Response> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
     };
 
+    let url = `${BASE_URL}${path}`;
+
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
+      // Also embed token as query-param — survives 307 redirect chains
+      // where the proxy preserves the original URL in its redirect-back.
+      const sep = path.includes('?') ? '&' : '?';
+      url = `${BASE_URL}${path}${sep}_token=${encodeURIComponent(this.token)}`;
     }
 
-    return fetch(`${BASE_URL}${path}`, {
-      ...options,
-      headers,
-    });
+    return fetch(url, { ...options, headers });
   }
 
-  /**
-   * Make an API request with automatic retry.
-   *
-   * Corporate proxies (Zscaler/SiteMinder) can 307-redirect API requests
-   * to a gateway domain. Browsers strip the Authorization header on
-   * cross-origin redirects, causing a 401. After the proxy's auth dance
-   * completes, subsequent requests go through normally. So we retry once
-   * on 401 or network error to handle this transparently.
-   */
+  // ── Strategy 3: POST-body tunnel ──────────────────────────────
+  // 307 redirects preserve POST method + body, so the token reaches
+  // the server even when headers are stripped.  The server-side
+  // "token tunnel" middleware reads _authToken / _method from the
+  // body, sets the Authorization header, and restores the original
+  // HTTP method before routing.
+  private async tunnelFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const tunnelBody: Record<string, unknown> = {
+      _authToken: this.token,
+      _method: options.method || 'GET',
+    };
+
+    // Merge original body fields (for POST/PUT endpoints)
+    if (options.body) {
+      try { Object.assign(tunnelBody, JSON.parse(options.body as string)); } catch { /* skip */ }
+    }
+
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tunnelBody),
+    });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, body.error || `HTTP ${res.status}`);
+    }
+
+    return res.json();
+  }
+
+  // ── Orchestrator: try all strategies ──────────────────────────
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    let response: Response;
+    const MAX_RETRIES = 3;
 
-    try {
-      response = await this.doFetch(path, options);
-    } catch (networkErr) {
-      // Network error (e.g., CORS failure from proxy redirect).
-      // Wait briefly for proxy session to establish, then retry.
-      if (!this.retrying && this.token) {
-        this.retrying = true;
-        try {
-          await new Promise(r => setTimeout(r, 500));
-          response = await this.doFetch(path, options);
-        } catch (retryErr) {
-          this.retrying = false;
-          throw retryErr;
-        }
-        this.retrying = false;
-      } else {
-        throw networkErr;
-      }
-    }
-
-    // If 401, the proxy may have stripped the Authorization header during
-    // a redirect. The proxy session is now established, so retry once.
-    if (response.status === 401 && this.token && !this.retrying) {
-      this.retrying = true;
+    // ─ attempt 1..MAX_RETRIES: normal fetch (header + query param) ──
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        await new Promise(r => setTimeout(r, 300));
-        response = await this.doFetch(path, options);
-      } finally {
-        this.retrying = false;
+        if (attempt > 1) {
+          const delay = Math.pow(2, attempt - 1) * 1000;       // 2 s, 4 s
+          console.log(`[API] Retry ${attempt}/${MAX_RETRIES} after ${delay}ms …`);
+          await new Promise(r => setTimeout(r, delay));
+        }
+
+        const response = await this.doFetch(path, options);
+
+        // Success or non-auth error → return/throw immediately
+        if (response.ok) return response.json();
+
+        if (response.status !== 401 || !this.token) {
+          const body = await response.json().catch(() => ({}));
+          throw new ApiError(response.status, body.error || `HTTP ${response.status}`);
+        }
+
+        // 401 with a token → likely header stripped by proxy; retry
+        console.warn(`[API] 401 on attempt ${attempt} – proxy may have stripped auth header`);
+      } catch (err) {
+        if (err instanceof ApiError) throw err; // non-recoverable HTTP error
+        // Network / TypeError (proxy CORS block) → keep retrying
+        console.warn(`[API] Network error on attempt ${attempt}:`, (err as Error).message);
+        if (!this.token || attempt >= MAX_RETRIES) {
+          // Only fall through to tunnel if we have a token
+          if (this.token) break;
+          throw err;
+        }
       }
     }
 
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new ApiError(response.status, body.error || 'Request failed');
-    }
-
-    return response.json();
+    // ─ Final fallback: POST-body tunnel ─────────────────────────
+    console.warn('[API] All standard attempts failed – using POST-body tunnel');
+    return this.tunnelFetch<T>(path, options);
   }
 
   get<T>(path: string): Promise<T> {

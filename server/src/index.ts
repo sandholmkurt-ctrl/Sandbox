@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
@@ -19,13 +18,61 @@ import { generateNotifications } from './services/notificationService';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// ─── Middleware ──────────────────────────────────────────
-app.use(cors({
-  origin: process.env.CLIENT_URL || (process.env.NODE_ENV === 'production' ? true : 'http://localhost:5173'),
-  credentials: true,
-}));
+// ─── CORS ────────────────────────────────────────────────
+// Custom CORS handling.  When a corporate proxy (Zscaler / SiteMinder)
+// 307-redirects a request cross-origin and back, the browser may send
+// Origin: null or strip the Origin header entirely.  The cors() package
+// with `origin: true` + `credentials: true` would then produce the
+// INVALID combination `Access-Control-Allow-Origin: *` plus
+// `Access-Control-Allow-Credentials: true`, causing the browser to
+// block the response.  We fix this with manual CORS headers.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    // Known origin – reflect it and allow credentials (cookies)
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else {
+    // No origin (same-origin request, or origin stripped by proxy).
+    // Use '*' WITHOUT credentials — valid CORS, and same-origin
+    // requests don't need credentials headers anyway.
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.setHeader('Access-Control-Expose-Headers', 'Set-Cookie');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 app.use(express.json());
 app.use(cookieParser());
+
+// ─── Token Tunnel / Method Override ──────────────────────
+// When a corporate proxy 307-redirects a GET request and strips the
+// Authorization header, the client falls back to re-sending the request
+// as a POST with { _authToken, _method: 'GET' } in the body.  The 307
+// preserves the POST body, so the token survives.  This middleware
+// extracts the token into the Authorization header and restores the
+// original HTTP method BEFORE Express's router matches routes.
+app.use('/api', (req, res, next) => {
+  if (
+    req.method === 'POST' &&
+    req.body?._authToken &&
+    req.body?._method &&
+    !req.headers.authorization
+  ) {
+    req.headers.authorization = `Bearer ${req.body._authToken}`;
+    req.method = String(req.body._method).toUpperCase();
+    const { _authToken, _method, ...cleanBody } = req.body;
+    req.body = cleanBody;
+  }
+  next();
+});
 
 // ─── Request Logger (production) ─────────────────────────
 app.use((req, _res, next) => {
