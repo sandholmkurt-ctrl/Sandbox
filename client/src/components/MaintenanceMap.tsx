@@ -36,16 +36,42 @@ function getCategoryColor(category: string | null): string {
   return CATEGORY_COLORS[category || 'General'] || '#6b7280';
 }
 
-// Determine circle type: filled (change), outline+fill (inspect), red ring (severe/overdue)
-function getCircleStyle(item: ScheduleItem, mileageCol: number, currentMileage: number) {
-  // If this specific column mileage is past current mileage + interval (overdue pattern)
-  if (item.status === 'overdue') {
-    return { bg: '#fca5a5', border: '#dc2626', textColor: '#991b1b', ring: true }; // red
+// Determine circle color per-column based on how mileageCol relates to currentMileage.
+// Past milestones (already completed) → green check.
+// The next-due milestone → red (overdue) or yellow (upcoming) based on proximity.
+// Future milestones beyond next-due → standard category color.
+function getCircleStyle(item: ScheduleItem, mileageCol: number, currentMileage: number, leadMiles: number = 500) {
+  const interval = item.mileage_interval || 0;
+  const nextDue = item.next_due_mileage;
+
+  // If we know the next_due_mileage from the schedule, use it for the exact milestone
+  if (nextDue !== null) {
+    if (mileageCol === nextDue) {
+      // This is THE next-due milestone
+      if (currentMileage >= nextDue) {
+        // Overdue — past due
+        return { bg: '#fca5a5', border: '#dc2626', textColor: '#991b1b', ring: true };
+      }
+      if (currentMileage >= nextDue - leadMiles) {
+        // Upcoming — within lead distance
+        return { bg: '#fde68a', border: '#d97706', textColor: '#92400e', ring: false };
+      }
+    }
+    if (mileageCol < nextDue && mileageCol <= currentMileage) {
+      // Past milestone (before next due, already behind us) — completed (green)
+      return { bg: '#86efac', border: '#16a34a', textColor: '#14532d', ring: false };
+    }
+  } else if (interval > 0) {
+    // Fallback: derive next-due from interval + current mileage
+    if (mileageCol <= currentMileage) {
+      return { bg: '#86efac', border: '#16a34a', textColor: '#14532d', ring: false };
+    }
+    if (mileageCol <= currentMileage + leadMiles) {
+      return { bg: '#fde68a', border: '#d97706', textColor: '#92400e', ring: false };
+    }
   }
-  if (item.status === 'upcoming') {
-    return { bg: '#fde68a', border: '#d97706', textColor: '#92400e', ring: false }; // yellow
-  }
-  // Standard: use category color
+
+  // Future milestone — standard category color
   const color = getCategoryColor(item.category);
   return { bg: color, border: color, textColor: '#ffffff', ring: false };
 }
@@ -112,8 +138,12 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
         </div>
         <div className="flex items-center gap-3 text-xs">
           <span className="flex items-center gap-1.5">
+            <span className="w-4 h-4 rounded-full bg-green-300 border-2 border-green-600 inline-block"></span>
+            Completed
+          </span>
+          <span className="flex items-center gap-1.5">
             <span className="w-4 h-4 rounded-full bg-blue-600 inline-block"></span>
-            Change
+            Scheduled
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-4 h-4 rounded-full bg-yellow-400 border-2 border-yellow-600 inline-block"></span>
