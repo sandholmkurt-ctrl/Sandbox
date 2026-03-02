@@ -73,6 +73,15 @@ export const CompleteServiceSchema = z.object({
   shopName: z.string().optional(),
 });
 
+export const UpdateServiceSchema = z.object({
+  completedDate: z.string().optional(),
+  mileageAtService: z.number().int().min(0).optional(),
+  cost: z.number().min(0).nullable().optional(),
+  notes: z.string().nullable().optional(),
+  shopName: z.string().nullable().optional(),
+  serviceDefinitionId: z.string().optional(),
+});
+
 // ─── Admin ──────────────────────────────────────────────
 export const ServiceDefinitionSchema = z.object({
   name: z.string().min(1),

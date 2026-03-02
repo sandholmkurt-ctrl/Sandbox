@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { queryOne, queryAll, execute } from '../database';
-import { CompleteServiceSchema, Vehicle, VehicleSchedule } from '../types';
+import { CompleteServiceSchema, UpdateServiceSchema, Vehicle, VehicleSchedule } from '../types';
 import { AuthRequest, authMiddleware } from '../middleware/auth';
 import { updateVehicleStatuses } from '../services/scheduleEngine';
 
@@ -121,6 +121,97 @@ router.post('/:vehicleId/services', async (req: AuthRequest, res: Response) => {
     res.status(201).json(record);
   } catch (err) {
     console.error('Complete service error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Edit Service History Entry ─────────────────────────
+router.put('/:vehicleId/services/:serviceId', async (req: AuthRequest, res: Response) => {
+  try {
+    const vehicle = await queryOne<Vehicle>(
+      'SELECT * FROM vehicles WHERE id = $1 AND user_id = $2',
+      [req.params.vehicleId, req.userId]
+    );
+
+    if (!vehicle) {
+      res.status(404).json({ error: 'Vehicle not found' });
+      return;
+    }
+
+    const existing = await queryOne(
+      'SELECT * FROM service_history WHERE id = $1 AND vehicle_id = $2',
+      [req.params.serviceId, vehicle.id]
+    );
+
+    if (!existing) {
+      res.status(404).json({ error: 'Service record not found' });
+      return;
+    }
+
+    const parsed = UpdateServiceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten().fieldErrors });
+      return;
+    }
+
+    const data = parsed.data;
+
+    // Build dynamic UPDATE
+    const fields: string[] = [];
+    const values: any[] = [];
+    let paramIdx = 1;
+
+    if (data.completedDate !== undefined) {
+      fields.push(`completed_date = $${paramIdx++}`);
+      values.push(data.completedDate);
+    }
+    if (data.mileageAtService !== undefined) {
+      fields.push(`mileage_at_service = $${paramIdx++}`);
+      values.push(data.mileageAtService);
+    }
+    if (data.cost !== undefined) {
+      fields.push(`cost = $${paramIdx++}`);
+      values.push(data.cost);
+    }
+    if (data.notes !== undefined) {
+      fields.push(`notes = $${paramIdx++}`);
+      values.push(data.notes);
+    }
+    if (data.shopName !== undefined) {
+      fields.push(`shop_name = $${paramIdx++}`);
+      values.push(data.shopName);
+    }
+    if (data.serviceDefinitionId !== undefined) {
+      fields.push(`service_definition_id = $${paramIdx++}`);
+      values.push(data.serviceDefinitionId);
+    }
+
+    if (fields.length === 0) {
+      res.status(400).json({ error: 'No fields to update' });
+      return;
+    }
+
+    values.push(req.params.serviceId);
+    await execute(
+      `UPDATE service_history SET ${fields.join(', ')} WHERE id = $${paramIdx}`,
+      values
+    );
+
+    // Re-evaluate statuses if date or mileage changed
+    if (data.completedDate !== undefined || data.mileageAtService !== undefined) {
+      await updateVehicleStatuses(vehicle.id);
+    }
+
+    const record = await queryOne(`
+      SELECT sh.*, sd.name as service_name, sd.description as service_description, sd.category
+      FROM service_history sh
+      JOIN service_definitions sd ON sd.id = sh.service_definition_id
+      WHERE sh.id = $1
+    `, [req.params.serviceId]);
+
+    res.json(record);
+  } catch (err) {
+    console.error('Update service error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
