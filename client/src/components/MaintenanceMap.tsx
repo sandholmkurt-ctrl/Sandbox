@@ -5,6 +5,7 @@ interface ScheduleItem {
   service_definition_id: string;
   service_name: string;
   category: string;
+  service_type?: 'change' | 'inspect' | 'service';
   mileage_interval: number | null;
   month_interval: number | null;
   status: 'ok' | 'upcoming' | 'overdue';
@@ -18,62 +19,18 @@ interface MaintenanceMapProps {
   onServiceClick?: (item: ScheduleItem) => void;
 }
 
-// Service type color scheme (matching maintenance map attachment)
-// Black = Change Interval, Yellow = Inspect/Change as needed, Red = Service Interval
-const SERVICE_TYPE_COLORS: Record<string, string> = {
-  // Change intervals (fluids, filters that get replaced)
-  'Engine Oil & Filter': '#1f2937',           // black
-  'Transmission Fluid': '#1f2937',
-  'Coolant/Antifreeze': '#1f2937',
-  'Brake Fluid': '#1f2937',
-  'Power Steering Fluid': '#1f2937',
-  'Differential Fluid': '#1f2937',
-  'Front Differential Fluid': '#1f2937',
-  'Rear Differential Fluid': '#1f2937',
-  'Transfer Case Fluid': '#1f2937',
-  'Engine Air Filter': '#1f2937',
-  'Cabin Air Filter': '#1f2937',
-  
-  // Inspect/change as needed (conditional service)
-  'Brake Inspection': '#eab308',
-  'Brake Pads & Rotors': '#eab308',
-  'Front Brake Pads': '#eab308',
-  'Rear Brake Pads': '#eab308',
-  'Spark Plugs': '#eab308',
-  'Battery Inspection': '#eab308',
-  'Suspension Inspection': '#eab308',
-  'Steering Inspection': '#eab308',
-  'Steering Linkage & Boots': '#eab308',
-  'Ball Joints & Dust Covers': '#eab308',
-  'Driveshaft Lubrication': '#eab308',
-  'Propeller Shaft Lubrication': '#eab308',
-  'Ball Joint Inspection': '#eab308',
-  
-  // Service intervals (major scheduled service)
-  'Tire Rotation': '#dc2626',                  // red
-  'Timing Belt/Chain': '#dc2626',              // red
-  'Serpentine Belt': '#dc2626',
-  'Coolant Service': '#dc2626',
-  'Transmission Service': '#dc2626',
-  'Fuel Filter': '#dc2626',
-  '30k Service': '#dc2626',
-  '60k Service': '#dc2626',
-  '90k Service': '#dc2626',
+// ── Service-type → color (data-driven from DB service_type column) ──
+// Black (#1f2937) = change   — consumable replaced at fixed OEM interval
+// Yellow (#eab308) = inspect — inspect per schedule; replace only if needed
+// Red (#dc2626)   = service  — major scheduled task at fixed interval
+const SERVICE_TYPE_COLOR_MAP: Record<string, string> = {
+  change:  '#1f2937',   // black (fluids, filters)
+  inspect: '#eab308',   // yellow (inspections, conditional)
+  service: '#dc2626',   // red (major scheduled tasks)
 };
 
-function getCategoryColor(serviceName: string, category: string | null): string {
-  // First try exact service name match
-  if (SERVICE_TYPE_COLORS[serviceName]) {
-    return SERVICE_TYPE_COLORS[serviceName];
-  }
-  
-  // Fallback: guess by category
-  // Drivetrain fluids → black
-  if (category === 'Drivetrain' || category === 'Engine') return '#1f2937';
-  // Brakes, Tires, Suspension → yellow (inspections)
-  if (category === 'Brakes' || category === 'Tires & Wheels' || category === 'Suspension' || category === 'Steering') return '#eab308';
-  // Everything else → red
-  return '#dc2626';
+function getServiceColor(item: { service_type?: string }): string {
+  return SERVICE_TYPE_COLOR_MAP[item.service_type || ''] || '#dc2626';
 }
 
 // Determine the ring (border) color for a circle based on its column mileage
@@ -236,7 +193,7 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
                   style={{ paddingBottom: HEADER_HEIGHT + LEGEND_OFFSET }}
                 >
                   {items.map((item) => {
-                    const catColor = getCategoryColor(item.service_name, item.category);
+                    const catColor = getServiceColor(item);
                     const ringColor = getRingColor(item, mileage, currentMileage);
                     return (
                       <button
@@ -291,7 +248,7 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
         <h4 className="text-sm font-semibold text-gray-700 mb-3">Service Legend</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-2.5">
           {serviceList.map((svc) => {
-            const color = getCategoryColor(svc.service_name, svc.category);
+            const color = getServiceColor(svc);
             return (
               <button
                 key={svc.id}

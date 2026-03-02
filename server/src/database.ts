@@ -95,6 +95,7 @@ export async function initializeDatabase(): Promise<void> {
       name TEXT NOT NULL,
       description TEXT,
       category TEXT,
+      service_type TEXT NOT NULL DEFAULT 'change',
       is_active INTEGER DEFAULT 1,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );

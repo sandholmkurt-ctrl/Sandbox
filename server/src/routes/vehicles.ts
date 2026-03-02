@@ -45,7 +45,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
     // Get upcoming schedules
     const schedules = await queryAll(`
       SELECT vs.*, sd.name as service_name, sd.description as service_description, sd.category,
-             vs.source as oem_source, vs.source_notes as oem_notes
+             sd.service_type, vs.source as oem_source, vs.source_notes as oem_notes
       FROM vehicle_schedules vs
       JOIN service_definitions sd ON sd.id = vs.service_definition_id
       WHERE vs.vehicle_id = $1
