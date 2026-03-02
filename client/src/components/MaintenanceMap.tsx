@@ -35,7 +35,6 @@ const SERVICE_TYPE_COLORS: Record<string, string> = {
   'Cabin Air Filter': '#1f2937',
   
   // Inspect/change as needed (conditional service)
-  'Tire Rotation': '#eab308',                  // yellow
   'Brake Inspection': '#eab308',
   'Brake Pads & Rotors': '#eab308',
   'Front Brake Pads': '#eab308',
@@ -51,6 +50,7 @@ const SERVICE_TYPE_COLORS: Record<string, string> = {
   'Ball Joint Inspection': '#eab308',
   
   // Service intervals (major scheduled service)
+  'Tire Rotation': '#dc2626',                  // red
   'Timing Belt/Chain': '#dc2626',              // red
   'Serpentine Belt': '#dc2626',
   'Coolant Service': '#dc2626',
