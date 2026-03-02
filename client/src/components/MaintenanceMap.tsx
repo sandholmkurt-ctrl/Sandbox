@@ -18,22 +18,59 @@ interface MaintenanceMapProps {
   onServiceClick?: (item: ScheduleItem) => void;
 }
 
-// Color palette for service categories
-const CATEGORY_COLORS: Record<string, string> = {
-  Engine: '#2563eb',       // blue
-  'Tires & Wheels': '#7c3aed', // violet
-  Brakes: '#dc2626',      // red
-  Drivetrain: '#ea580c',   // orange
-  Steering: '#0891b2',     // cyan
-  Suspension: '#4f46e5',   // indigo
-  HVAC: '#059669',         // emerald
-  Electrical: '#d97706',   // amber
-  Exterior: '#6b7280',     // gray
-  General: '#8b5cf6',      // purple
+// Service type color scheme (matching maintenance map attachment)
+// Black = Change Interval, Yellow = Inspect/Change as needed, Red = Service Interval
+const SERVICE_TYPE_COLORS: Record<string, string> = {
+  // Change intervals (fluids, filters that get replaced)
+  'Engine Oil & Filter': '#1f2937',           // black
+  'Transmission Fluid': '#1f2937',
+  'Coolant/Antifreeze': '#1f2937',
+  'Brake Fluid': '#1f2937',
+  'Power Steering Fluid': '#1f2937',
+  'Differential Fluid': '#1f2937',
+  'Front Differential Fluid': '#1f2937',
+  'Rear Differential Fluid': '#1f2937',
+  'Transfer Case Fluid': '#1f2937',
+  'Engine Air Filter': '#1f2937',
+  'Cabin Air Filter': '#1f2937',
+  
+  // Inspect/change as needed (conditional service)
+  'Tire Rotation': '#eab308',                  // yellow
+  'Brake Inspection': '#eab308',
+  'Brake Pads & Rotors': '#eab308',
+  'Front Brake Pads': '#eab308',
+  'Rear Brake Pads': '#eab308',
+  'Spark Plugs': '#eab308',
+  'Battery Inspection': '#eab308',
+  'Suspension Inspection': '#eab308',
+  'Steering Inspection': '#eab308',
+  'Driveshaft Lubrication': '#eab308',
+  'Ball Joint Inspection': '#eab308',
+  
+  // Service intervals (major scheduled service)
+  'Timing Belt/Chain': '#dc2626',              // red
+  'Serpentine Belt': '#dc2626',
+  'Coolant Service': '#dc2626',
+  'Transmission Service': '#dc2626',
+  'Fuel Filter': '#dc2626',
+  '30k Service': '#dc2626',
+  '60k Service': '#dc2626',
+  '90k Service': '#dc2626',
 };
 
-function getCategoryColor(category: string | null): string {
-  return CATEGORY_COLORS[category || 'General'] || '#6b7280';
+function getCategoryColor(serviceName: string, category: string | null): string {
+  // First try exact service name match
+  if (SERVICE_TYPE_COLORS[serviceName]) {
+    return SERVICE_TYPE_COLORS[serviceName];
+  }
+  
+  // Fallback: guess by category
+  // Drivetrain fluids → black
+  if (category === 'Drivetrain' || category === 'Engine') return '#1f2937';
+  // Brakes & Tires → yellow
+  if (category === 'Brakes' || category === 'Tires & Wheels') return '#eab308';
+  // Everything else → red
+  return '#dc2626';
 }
 
 // Determine the ring (border) color for a circle based on its column mileage
@@ -131,23 +168,41 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
           <h3 className="text-lg font-bold text-gray-900">Maintenance Map</h3>
           <p className="text-xs text-gray-500">{vehicleLabel} • Every {axisStep >= 1000 ? `${(axisStep / 1000)}K` : axisStep.toLocaleString()} mi to {(maxMileage / 1000).toFixed(0)}K</p>
         </div>
-        <div className="flex items-center gap-3 text-xs">
-          <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-green-600 inline-block"></span>
-            Completed
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-gray-400 inline-block"></span>
-            Scheduled
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-yellow-600 inline-block"></span>
-            Upcoming
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-red-600 inline-block"></span>
-            Overdue
-          </span>
+        <div className="flex flex-col items-end gap-2">
+          {/* Service Type Legend */}
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-gray-900 inline-block"></span>
+              Change Interval
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-yellow-500 inline-block"></span>
+              Inspect / Change as needed
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-red-600 inline-block"></span>
+              Service Interval
+            </span>
+          </div>
+          {/* Status Legend */}
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-green-600 inline-block"></span>
+              Complete
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-gray-400 inline-block"></span>
+              Scheduled
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-yellow-600 inline-block"></span>
+              Upcoming
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-red-600 inline-block"></span>
+              Overdue
+            </span>
+          </div>
         </div>
       </div>
 
@@ -178,7 +233,7 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
                   style={{ paddingBottom: HEADER_HEIGHT + LEGEND_OFFSET }}
                 >
                   {items.map((item) => {
-                    const catColor = getCategoryColor(item.category);
+                    const catColor = getCategoryColor(item.service_name, item.category);
                     const ringColor = getRingColor(item, mileage, currentMileage);
                     return (
                       <button
@@ -233,7 +288,7 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
         <h4 className="text-sm font-semibold text-gray-700 mb-3">Service Legend</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-2.5">
           {serviceList.map((svc) => {
-            const color = getCategoryColor(svc.category);
+            const color = getCategoryColor(svc.service_name, svc.category);
             return (
               <button
                 key={svc.id}

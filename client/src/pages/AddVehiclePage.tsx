@@ -257,8 +257,8 @@ export default function AddVehiclePage() {
                   value={year}
                   onChange={e => setYear(e.target.value)}
                   min={1900}
-                  max={currentYear + 1}
-                  placeholder={model ? 'N/A' : '2024'}
+                  max={2026}
+                  placeholder={model ? 'N/A' : '2026'}
                   required
                 />
               )}
