@@ -169,6 +169,11 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
       await updateVehicleStatuses(vehicle.id);
     }
 
+    // Regenerate schedule if drive type or engine changed (picks up new matching rules)
+    if (driveType !== undefined || engine !== undefined) {
+      await generateScheduleForVehicle(vehicle.id);
+    }
+
     const updated = await queryOne('SELECT * FROM vehicles WHERE id = $1', [vehicle.id]);
     res.json(updated);
   } catch (err) {

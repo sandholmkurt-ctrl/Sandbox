@@ -37,9 +37,17 @@ export async function generateScheduleForVehicle(vehicleId: string): Promise<voi
     return true;
   });
 
+  // Skip services that already have a vehicle_schedule entry (safe for re-runs)
+  const existing = await queryAll<{ service_definition_id: string }>(
+    'SELECT service_definition_id FROM vehicle_schedules WHERE vehicle_id = $1',
+    [vehicleId]
+  );
+  const existingIds = new Set(existing.map(e => e.service_definition_id));
+  const newRules = uniqueRules.filter(r => !existingIds.has(r.service_definition_id));
+
   const now = new Date();
 
-  for (const rule of uniqueRules) {
+  for (const rule of newRules) {
     let nextDueMileage: number | null = null;
     let lastServiceMileage: number | null = null;
 

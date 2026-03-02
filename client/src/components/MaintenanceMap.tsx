@@ -44,7 +44,10 @@ const SERVICE_TYPE_COLORS: Record<string, string> = {
   'Battery Inspection': '#eab308',
   'Suspension Inspection': '#eab308',
   'Steering Inspection': '#eab308',
+  'Steering Linkage & Boots': '#eab308',
+  'Ball Joints & Dust Covers': '#eab308',
   'Driveshaft Lubrication': '#eab308',
+  'Propeller Shaft Lubrication': '#eab308',
   'Ball Joint Inspection': '#eab308',
   
   // Service intervals (major scheduled service)
@@ -67,8 +70,8 @@ function getCategoryColor(serviceName: string, category: string | null): string 
   // Fallback: guess by category
   // Drivetrain fluids → black
   if (category === 'Drivetrain' || category === 'Engine') return '#1f2937';
-  // Brakes & Tires → yellow
-  if (category === 'Brakes' || category === 'Tires & Wheels') return '#eab308';
+  // Brakes, Tires, Suspension → yellow (inspections)
+  if (category === 'Brakes' || category === 'Tires & Wheels' || category === 'Suspension' || category === 'Steering') return '#eab308';
   // Everything else → red
   return '#dc2626';
 }
