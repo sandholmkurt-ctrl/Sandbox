@@ -12,6 +12,7 @@ import notificationRoutes from './routes/notifications';
 import dashboardRoutes from './routes/dashboard';
 import vinRoutes from './routes/vin';
 import adminRoutes from './routes/admin';
+import catalogRoutes from './routes/catalog';
 import { updateAllVehicleStatuses } from './services/scheduleEngine';
 import { generateNotifications } from './services/notificationService';
 import { seed } from './seed';
@@ -95,6 +96,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/vin', vinRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/catalog', catalogRoutes);
 
 // ─── Health Check ───────────────────────────────────────
 app.get('/api/health', async (_req, res) => {

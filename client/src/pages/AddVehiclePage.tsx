@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
-import { Search, Car } from 'lucide-react';
+import { Search, Car, ChevronDown } from 'lucide-react';
 
 export default function AddVehiclePage() {
   const navigate = useNavigate();
@@ -19,6 +19,33 @@ export default function AddVehiclePage() {
   const [currentMileage, setCurrentMileage] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // OEM catalog dropdowns
+  const [makes, setMakes] = useState<string[]>([]);
+  const [models, setModels] = useState<string[]>([]);
+  const [years, setYears] = useState<number[]>([]);
+
+  // Load makes on mount
+  useEffect(() => {
+    api.get<string[]>('/catalog/makes').then(setMakes).catch(() => {});
+  }, []);
+
+  // Load models when make changes
+  useEffect(() => {
+    setModels([]);
+    setYears([]);
+    if (!make) return;
+    api.get<string[]>(`/catalog/models?make=${encodeURIComponent(make)}`).then(setModels).catch(() => {});
+  }, [make]);
+
+  // Load years when model changes
+  useEffect(() => {
+    setYears([]);
+    if (!make || !model) return;
+    api.get<number[]>(`/catalog/years?make=${encodeURIComponent(make)}&model=${encodeURIComponent(model)}`)
+      .then(setYears)
+      .catch(() => {});
+  }, [make, model]);
 
   const handleVinLookup = async () => {
     if (vin.length !== 17) {
@@ -157,39 +184,84 @@ export default function AddVehiclePage() {
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
-              <input
-                type="number"
-                className="input-field"
-                value={year}
-                onChange={e => setYear(e.target.value)}
-                min={1900}
-                max={currentYear + 1}
-                placeholder="2024"
-                required
-              />
-            </div>
-            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Make *</label>
-              <input
-                type="text"
-                className="input-field"
-                value={make}
-                onChange={e => setMake(e.target.value)}
-                placeholder="Toyota"
-                required
-              />
+              {makes.length > 0 ? (
+                <div className="relative">
+                  <select
+                    className="input-field appearance-none pr-8"
+                    value={make}
+                    onChange={e => { setMake(e.target.value); setModel(''); setYear(''); }}
+                    required
+                  >
+                    <option value="">Select make...</option>
+                    {makes.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  className="input-field"
+                  value={make}
+                  onChange={e => setMake(e.target.value)}
+                  placeholder="Toyota"
+                  required
+                />
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Model *</label>
-              <input
-                type="text"
-                className="input-field"
-                value={model}
-                onChange={e => setModel(e.target.value)}
-                placeholder="Tacoma"
-                required
-              />
+              {models.length > 0 ? (
+                <div className="relative">
+                  <select
+                    className="input-field appearance-none pr-8"
+                    value={model}
+                    onChange={e => { setModel(e.target.value); setYear(''); }}
+                    required
+                  >
+                    <option value="">Select model...</option>
+                    {models.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  className="input-field"
+                  value={model}
+                  onChange={e => setModel(e.target.value)}
+                  placeholder={make ? 'Select make first' : 'Tacoma'}
+                  required
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
+              {years.length > 0 ? (
+                <div className="relative">
+                  <select
+                    className="input-field appearance-none pr-8"
+                    value={year}
+                    onChange={e => setYear(e.target.value)}
+                    required
+                  >
+                    <option value="">Select year...</option>
+                    {years.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+              ) : (
+                <input
+                  type="number"
+                  className="input-field"
+                  value={year}
+                  onChange={e => setYear(e.target.value)}
+                  min={1900}
+                  max={currentYear + 1}
+                  placeholder={model ? 'N/A' : '2024'}
+                  required
+                />
+              )}
             </div>
           </div>
 
