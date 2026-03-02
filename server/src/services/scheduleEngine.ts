@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import db from '../database';
+import { queryOne, queryAll, execute } from '../database';
 import { Vehicle, ScheduleRule, VehicleSchedule } from '../types';
 
 /**
@@ -7,27 +7,27 @@ import { Vehicle, ScheduleRule, VehicleSchedule } from '../types';
  * Matches schedule_rules by make/model/year/engine/drive_type and
  * creates vehicle_schedules entries with computed next-due values.
  */
-export function generateScheduleForVehicle(vehicleId: string): void {
-  const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicleId) as Vehicle | undefined;
+export async function generateScheduleForVehicle(vehicleId: string): Promise<void> {
+  const vehicle = await queryOne<Vehicle>('SELECT * FROM vehicles WHERE id = $1', [vehicleId]);
   if (!vehicle) return;
 
   // Find matching rules — most specific first (highest priority wins)
-  const rules = db.prepare(`
+  const rules = await queryAll<ScheduleRule & { name: string; rule_source: string; rule_notes: string }>(`
     SELECT sr.*, sd.name, sr.source as rule_source, sr.notes as rule_notes
     FROM schedule_rules sr
     JOIN service_definitions sd ON sd.id = sr.service_definition_id AND sd.is_active = 1
     WHERE
-      (sr.make IS NULL OR LOWER(sr.make) = LOWER(?))
-      AND (sr.model IS NULL OR LOWER(sr.model) = LOWER(?))
-      AND (sr.year_min IS NULL OR sr.year_min <= ?)
-      AND (sr.year_max IS NULL OR sr.year_max >= ?)
-      AND (sr.engine IS NULL OR LOWER(sr.engine) = LOWER(?))
-      AND (sr.drive_type IS NULL OR LOWER(sr.drive_type) = LOWER(?))
+      (sr.make IS NULL OR LOWER(sr.make) = LOWER($1))
+      AND (sr.model IS NULL OR LOWER(sr.model) = LOWER($2))
+      AND (sr.year_min IS NULL OR sr.year_min <= $3)
+      AND (sr.year_max IS NULL OR sr.year_max >= $4)
+      AND (sr.engine IS NULL OR LOWER(sr.engine) = LOWER($5))
+      AND (sr.drive_type IS NULL OR LOWER(sr.drive_type) = LOWER($6))
     ORDER BY sr.priority DESC
-  `).all(
+  `, [
     vehicle.make, vehicle.model, vehicle.year, vehicle.year,
     vehicle.engine || '', vehicle.drive_type || ''
-  ) as (ScheduleRule & { name: string })[];
+  ]);
 
   // Deduplicate by service_definition_id (keep highest priority)
   const seen = new Set<string>();
@@ -68,16 +68,17 @@ export function generateScheduleForVehicle(vehicleId: string): void {
     }
 
     const schedId = uuidv4();
-    db.prepare(`
+    await execute(`
       INSERT INTO vehicle_schedules 
         (id, vehicle_id, service_definition_id, mileage_interval, month_interval, is_combined, next_due_mileage, next_due_date, status, source, source_notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ok', $9, $10)
+    `, [
       schedId, vehicle.id, rule.service_definition_id,
       rule.mileage_interval, rule.month_interval,
       rule.is_combined, nextDueMileage, nextDueDate,
-      (rule as any).source || (rule as any).rule_source || null, (rule as any).notes || (rule as any).rule_notes || null
-    );
+      (rule as any).source || (rule as any).rule_source || null,
+      (rule as any).notes || (rule as any).rule_notes || null
+    ]);
 
     // ── Create assumed service-history record ───────────────────
     // When a vehicle is added with mileage > 0, we assume the owner
@@ -85,11 +86,11 @@ export function generateScheduleForVehicle(vehicleId: string): void {
     // most recent interval milestone so the dashboard shows a non-empty
     // service history and the "last service" baseline is recorded.
     if (lastServiceMileage !== null && lastServiceMileage > 0) {
-      db.prepare(`
+      await execute(`
         INSERT INTO service_history
           (id, vehicle_id, vehicle_schedule_id, service_definition_id, completed_date, mileage_at_service, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [
         uuidv4(),
         vehicle.id,
         schedId,
@@ -97,30 +98,31 @@ export function generateScheduleForVehicle(vehicleId: string): void {
         now.toISOString().split('T')[0],
         lastServiceMileage,
         `Assumed on-schedule service at ${lastServiceMileage.toLocaleString()} mi (auto-generated)`
-      );
+      ]);
     }
   }
 
   // Run status evaluation
-  updateVehicleStatuses(vehicleId);
+  await updateVehicleStatuses(vehicleId);
 }
 
 /**
  * Re-evaluate the status of all schedule items for a vehicle
  * based on the current mileage and date.
  */
-export function updateVehicleStatuses(vehicleId: string): void {
-  const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicleId) as Vehicle | undefined;
+export async function updateVehicleStatuses(vehicleId: string): Promise<void> {
+  const vehicle = await queryOne<Vehicle>('SELECT * FROM vehicles WHERE id = $1', [vehicleId]);
   if (!vehicle) return;
 
   // Get user settings for lead distances
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(vehicle.user_id) as any;
+  const user = await queryOne<any>('SELECT * FROM users WHERE id = $1', [vehicle.user_id]);
   const leadMiles = user?.reminder_lead_miles ?? 500;
   const leadDays = user?.reminder_lead_days ?? 30;
 
-  const schedules = db.prepare(
-    'SELECT * FROM vehicle_schedules WHERE vehicle_id = ?'
-  ).all(vehicle.id) as VehicleSchedule[];
+  const schedules = await queryAll<VehicleSchedule>(
+    'SELECT * FROM vehicle_schedules WHERE vehicle_id = $1',
+    [vehicle.id]
+  );
 
   const now = new Date();
   const leadDate = new Date(now);
@@ -163,9 +165,10 @@ export function updateVehicleStatuses(vehicleId: string): void {
     }
 
     if (status !== schedule.status) {
-      db.prepare(
-        "UPDATE vehicle_schedules SET status = ?, updated_at = datetime('now') WHERE id = ?"
-      ).run(status, schedule.id);
+      await execute(
+        "UPDATE vehicle_schedules SET status = $1, updated_at = NOW() WHERE id = $2",
+        [status, schedule.id]
+      );
     }
   }
 }
@@ -174,9 +177,9 @@ export function updateVehicleStatuses(vehicleId: string): void {
  * Run status checks for ALL vehicles in the system.
  * Called periodically by the cron job.
  */
-export function updateAllVehicleStatuses(): void {
-  const vehicles = db.prepare('SELECT id FROM vehicles').all() as { id: string }[];
+export async function updateAllVehicleStatuses(): Promise<void> {
+  const vehicles = await queryAll<{ id: string }>('SELECT id FROM vehicles');
   for (const v of vehicles) {
-    updateVehicleStatuses(v.id);
+    await updateVehicleStatuses(v.id);
   }
 }
