@@ -164,6 +164,24 @@ export async function initializeDatabase(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    -- ── Migrations (safe to re-run) ──────────────────────
+    -- Add service_type column if missing (existing DBs created before this column)
+    ALTER TABLE service_definitions ADD COLUMN IF NOT EXISTS service_type TEXT NOT NULL DEFAULT 'change';
+
+    -- Backfill service_type for existing rows (idempotent — only updates rows still at default)
+    UPDATE service_definitions SET service_type = 'inspect' WHERE service_type = 'change' AND name IN (
+      'Drive Belt (Serpentine)', 'PCV Valve',
+      'Brake Pads & Rotors Inspection', 'Parking Brake Adjustment',
+      'Wheel Alignment',
+      'Ball Joints & Dust Covers', 'Steering Linkage & Boots',
+      'Battery & Terminals', 'Wiper Blades',
+      'Multi-Point Inspection', 'Exhaust System Inspection',
+      'Propeller Shaft Lubrication'
+    );
+    UPDATE service_definitions SET service_type = 'service' WHERE service_type = 'change' AND name IN (
+      'Spark Plugs', 'Timing Belt/Chain', 'Valve Clearance Adjustment', 'Tire Rotation'
+    );
+
     -- Indexes for performance
     CREATE INDEX IF NOT EXISTS idx_vehicles_user_id ON vehicles(user_id);
     CREATE INDEX IF NOT EXISTS idx_mileage_entries_vehicle_id ON mileage_entries(vehicle_id);

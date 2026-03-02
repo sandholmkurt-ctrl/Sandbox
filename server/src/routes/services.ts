@@ -261,7 +261,8 @@ router.get('/:vehicleId/schedule', async (req: AuthRequest, res: Response) => {
     }
 
     const schedules = await queryAll(`
-      SELECT vs.*, sd.name as service_name, sd.description as service_description, sd.category
+      SELECT vs.*, sd.name as service_name, sd.description as service_description, sd.category,
+             sd.service_type
       FROM vehicle_schedules vs
       JOIN service_definitions sd ON sd.id = vs.service_definition_id
       WHERE vs.vehicle_id = $1
