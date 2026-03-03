@@ -33,6 +33,14 @@ export default function VehicleDetailPage() {
   // Delete confirm
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Edit service history
+  const [editingService, setEditingService] = useState<any>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editMileage, setEditMileage] = useState('');
+  const [editCost, setEditCost] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editShop, setEditShop] = useState('');
+
   const loadData = useCallback(async () => {
     if (!id) return;
     try {
@@ -90,6 +98,36 @@ export default function VehicleDetailPage() {
   const handleDeleteVehicle = async () => {
     await api.delete(`/vehicles/${id}`);
     navigate('/vehicles');
+  };
+
+  const openEditService = (h: any) => {
+    setEditingService(h);
+    setEditDate(h.completed_date);
+    setEditMileage(String(h.mileage_at_service));
+    setEditCost(h.cost != null ? String(h.cost) : '');
+    setEditNotes(h.notes || '');
+    setEditShop(h.shop_name || '');
+  };
+
+  const handleEditService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingService) return;
+
+    await api.put(`/vehicles/${id}/services/${editingService.id}`, {
+      completedDate: editDate,
+      mileageAtService: parseInt(editMileage) || 0,
+      cost: editCost ? parseFloat(editCost) : null,
+      notes: editNotes || null,
+      shopName: editShop || null,
+    });
+
+    setEditingService(null);
+    loadData();
+  };
+
+  const handleDeleteService = async (serviceId: string) => {
+    await api.delete(`/vehicles/${id}/services/${serviceId}`);
+    loadData();
   };
 
   if (loading) {
@@ -301,9 +339,23 @@ export default function VehicleDetailPage() {
                   </p>
                   {h.notes && <p className="text-xs text-gray-400 mt-0.5">{h.notes}</p>}
                 </div>
-                {h.cost && (
-                  <span className="text-sm font-medium text-gray-700">${h.cost.toFixed(2)}</span>
+                {h.cost != null && (
+                  <span className="text-sm font-medium text-gray-700">${Number(h.cost).toFixed(2)}</span>
                 )}
+                <button
+                  onClick={() => openEditService(h)}
+                  className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-brand-600"
+                  title="Edit"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDeleteService(h.id)}
+                  className="p-1.5 hover:bg-red-50 rounded text-gray-400 hover:text-red-500"
+                  title="Delete"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             ))
           )}
@@ -403,6 +455,87 @@ export default function VehicleDetailPage() {
               <div className="flex gap-3">
                 <button type="submit" className="btn-primary flex-1">Mark Complete</button>
                 <button type="button" className="btn-secondary" onClick={() => setShowCompleteService(false)}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Service History Modal */}
+      {editingService && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold">Edit Service Record</h2>
+              <button onClick={() => setEditingService(null)} className="p-1 hover:bg-gray-100 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 mb-4">
+              Editing <strong>{editingService.service_name}</strong>
+            </p>
+
+            <form onSubmit={handleEditService} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date Completed</label>
+                <input
+                  type="date"
+                  className="input-field"
+                  value={editDate}
+                  onChange={e => setEditDate(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mileage at Service</label>
+                <input
+                  type="number"
+                  className="input-field"
+                  value={editMileage}
+                  onChange={e => setEditMileage(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Cost ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="input-field"
+                  value={editCost}
+                  onChange={e => setEditCost(e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Shop/Location</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editShop}
+                  onChange={e => setEditShop(e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  className="input-field"
+                  rows={2}
+                  value={editNotes}
+                  onChange={e => setEditNotes(e.target.value)}
+                  placeholder="Optional notes..."
+                />
+              </div>
+              <div className="flex gap-3">
+                <button type="submit" className="btn-primary flex-1">
+                  <Save className="w-4 h-4 mr-1 inline" />
+                  Save Changes
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => setEditingService(null)}>
                   Cancel
                 </button>
               </div>

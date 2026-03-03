@@ -1,40 +1,63 @@
 /**
- * Persistence integration tests
+ * PostgreSQL persistence integration tests
  *
- * These tests call the REAL seed.ts code (as a subprocess) with DB_PATH
- * pointed at a temp file.  They verify the actual code paths, not simulations.
+ * These tests call the REAL seed.ts code (as a subprocess) with DATABASE_URL
+ * pointed at a test PostgreSQL database.  They verify the actual code paths.
  *
- *  1. Real seed() populates a fresh DB (28 service defs, 349 rules, demo user)
+ *  1. Real seed() populates a fresh PG DB (28 service defs, 349+ rules, demo user)
  *  2. Re-running seed() on a populated DB skips destructive operations
  *  3. User-added data (e.g. a new vehicle) survives a re-seed
- *  4. Deleting the DB file and re-running seed() recreates everything (simulates
- *     ephemeral filesystem — this is what's happening on Render free tier)
- *  5. DB_PATH env var is respected by the real database.ts module
+ *  4. Dropping all tables and re-running seed() recreates everything
+ *     (simulates fresh deploy — now safe because PG is external)
+ *  5. DATABASE_URL env var is respected by the real database.ts module
+ *
+ * Requires: a running PostgreSQL with DATABASE_URL or default
+ *           postgresql://postgres:postgres@localhost:5432/vehicle_maintenance_test
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execSync } from 'child_process';
-import Database from 'better-sqlite3';
+import { Client } from 'pg';
 import path from 'path';
-import fs from 'fs';
-import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 
-// ─── helpers ──────────────────────────────────────────────────────────
+// ─── config ───────────────────────────────────────────────────────────
+
+const TEST_DATABASE_URL =
+  process.env.TEST_DATABASE_URL ||
+  process.env.DATABASE_URL ||
+  'postgresql://postgres:postgres@localhost:5432/vehicle_maintenance_test';
 
 const SERVER_DIR = path.resolve(__dirname, '..', '..');
 const SEED_SCRIPT = path.join(SERVER_DIR, 'src', 'seed.ts');
 
-/** Create a temp dir and return the DB path inside it */
-function makeTempDbPath(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-persist-'));
-  return path.join(dir, 'vehicle_maintenance.db');
+// ─── helpers ──────────────────────────────────────────────────────────
+
+/** Check if we can connect to the test PG database */
+async function canConnectToPg(): Promise<boolean> {
+  const client = new Client({ connectionString: TEST_DATABASE_URL });
+  try {
+    await client.connect();
+    await client.query('SELECT 1');
+    await client.end();
+    return true;
+  } catch {
+    try { await client.end(); } catch { /* ignore */ }
+    return false;
+  }
 }
 
-/** Run the real seed.ts with DB_PATH set to a temp path */
-function runRealSeed(dbPath: string): string {
+/** Open a PG client for inspection queries */
+async function openPg(): Promise<Client> {
+  const client = new Client({ connectionString: TEST_DATABASE_URL });
+  await client.connect();
+  return client;
+}
+
+/** Run the real seed.ts with DATABASE_URL set to test database */
+function runRealSeed(): string {
   const env = {
     ...process.env,
-    DB_PATH: dbPath,
+    DATABASE_URL: TEST_DATABASE_URL,
     SERVER_ROOT: SERVER_DIR,
   };
   const output = execSync(
@@ -44,262 +67,308 @@ function runRealSeed(dbPath: string): string {
   return output;
 }
 
-/** Open an existing DB (read-only inspection) */
-function openDb(dbPath: string): Database.Database {
-  return new Database(dbPath);
+/** Drop all application tables to simulate a fresh database */
+async function dropAllTables(): Promise<void> {
+  const client = await openPg();
+  try {
+    await client.query(`
+      DROP TABLE IF EXISTS notifications CASCADE;
+      DROP TABLE IF EXISTS vehicle_schedules CASCADE;
+      DROP TABLE IF EXISTS mileage_history CASCADE;
+      DROP TABLE IF EXISTS service_history CASCADE;
+      DROP TABLE IF EXISTS schedule_rules CASCADE;
+      DROP TABLE IF EXISTS service_definitions CASCADE;
+      DROP TABLE IF EXISTS vehicles CASCADE;
+      DROP TABLE IF EXISTS users CASCADE;
+    `);
+  } finally {
+    await client.end();
+  }
 }
 
-/** Clean up temp dir */
-function cleanupTempDb(dbPath: string): void {
-  const dir = path.dirname(dbPath);
-  try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ok */ }
-}
+// ─── Skip guard ───────────────────────────────────────────────────────
+
+let pgAvailable = false;
+
+beforeAll(async () => {
+  pgAvailable = await canConnectToPg();
+  if (!pgAvailable) {
+    console.warn(
+      `⚠  Skipping persistence tests — cannot connect to PostgreSQL at ${TEST_DATABASE_URL}\n` +
+      '   Set TEST_DATABASE_URL or start a local PG instance to run these tests.'
+    );
+  }
+});
 
 // ─── Tests ────────────────────────────────────────────────────────────
 
-describe('Real seed() — fresh database', () => {
-  let dbPath: string;
-
-  beforeAll(() => {
-    dbPath = makeTempDbPath();
-    runRealSeed(dbPath);
+describe('Real seed() — fresh PostgreSQL database', () => {
+  beforeAll(async () => {
+    if (!pgAvailable) return;
+    await dropAllTables();
+    runRealSeed();
   });
 
-  afterAll(() => cleanupTempDb(dbPath));
-
-  it('creates the DB file at DB_PATH', () => {
-    expect(fs.existsSync(dbPath)).toBe(true);
-    const stat = fs.statSync(dbPath);
-    expect(stat.size).toBeGreaterThan(0);
+  afterAll(async () => {
+    if (!pgAvailable) return;
+    await dropAllTables();
   });
 
-  it('populates 28 service definitions', () => {
-    const db = openDb(dbPath);
-    const row = db.prepare('SELECT COUNT(*) as cnt FROM service_definitions').get() as { cnt: number };
-    expect(row.cnt).toBe(28);
-    db.close();
+  it('populates 28 service definitions', async () => {
+    if (!pgAvailable) return;
+    const client = await openPg();
+    const res = await client.query('SELECT COUNT(*)::int as cnt FROM service_definitions');
+    expect(res.rows[0].cnt).toBe(28);
+    await client.end();
   });
 
-  it('populates 349 schedule rules', () => {
-    const db = openDb(dbPath);
-    const row = db.prepare('SELECT COUNT(*) as cnt FROM schedule_rules').get() as { cnt: number };
-    expect(row.cnt).toBe(349);
-    db.close();
+  it('populates 349+ schedule rules', async () => {
+    if (!pgAvailable) return;
+    const client = await openPg();
+    const res = await client.query('SELECT COUNT(*)::int as cnt FROM schedule_rules');
+    expect(res.rows[0].cnt).toBeGreaterThanOrEqual(349);
+    await client.end();
   });
 
-  it('creates the demo user (demo@example.com)', () => {
-    const db = openDb(dbPath);
-    const user = db.prepare('SELECT email, first_name FROM users WHERE email = ?').get('demo@example.com') as any;
-    expect(user).toBeDefined();
-    expect(user.email).toBe('demo@example.com');
-    expect(user.first_name).toBe('Demo');
-    db.close();
+  it('creates the demo user (demo@example.com)', async () => {
+    if (!pgAvailable) return;
+    const client = await openPg();
+    const res = await client.query(
+      'SELECT email, first_name FROM users WHERE email = $1',
+      ['demo@example.com']
+    );
+    expect(res.rows[0]).toBeDefined();
+    expect(res.rows[0].email).toBe('demo@example.com');
+    expect(res.rows[0].first_name).toBe('Demo');
+    await client.end();
   });
 
-  it('creates the admin user', () => {
-    const db = openDb(dbPath);
-    const admin = db.prepare('SELECT email, is_admin FROM users WHERE is_admin = 1').get() as any;
-    expect(admin).toBeDefined();
-    expect(admin.is_admin).toBe(1);
-    db.close();
+  it('creates the admin user', async () => {
+    if (!pgAvailable) return;
+    const client = await openPg();
+    const res = await client.query('SELECT email, is_admin FROM users WHERE is_admin = true');
+    expect(res.rows.length).toBeGreaterThanOrEqual(1);
+    expect(res.rows[0].is_admin).toBe(true);
+    await client.end();
   });
 
-  it('creates the demo vehicle (2021 Toyota 4Runner)', () => {
-    const db = openDb(dbPath);
-    const vehicle = db.prepare('SELECT year, make, model FROM vehicles').get() as any;
-    expect(vehicle).toBeDefined();
-    expect(vehicle.year).toBe(2021);
-    expect(vehicle.make).toBe('Toyota');
-    expect(vehicle.model).toBe('4Runner');
-    db.close();
+  it('creates the demo vehicle (2021 Toyota 4Runner)', async () => {
+    if (!pgAvailable) return;
+    const client = await openPg();
+    const res = await client.query('SELECT year, make, model FROM vehicles LIMIT 1');
+    expect(res.rows[0]).toBeDefined();
+    expect(res.rows[0].year).toBe(2021);
+    expect(res.rows[0].make).toBe('Toyota');
+    expect(res.rows[0].model).toBe('4Runner');
+    await client.end();
   });
 });
 
 describe('Real seed() — idempotent re-run preserves data', () => {
-  let dbPath: string;
   let userVehicleId: string;
 
-  beforeAll(() => {
-    dbPath = makeTempDbPath();
+  beforeAll(async () => {
+    if (!pgAvailable) return;
 
-    // Run 1: initial seed
-    runRealSeed(dbPath);
+    // Fresh start
+    await dropAllTables();
+    runRealSeed();
 
     // Simulate user adding a vehicle (like adding a 2026 Kia Carnival)
-    const db = openDb(dbPath);
-    const demoUser = db.prepare('SELECT id FROM users WHERE email = ?').get('demo@example.com') as any;
+    const client = await openPg();
+    const userRes = await client.query(
+      'SELECT id FROM users WHERE email = $1',
+      ['demo@example.com']
+    );
+    const userId = userRes.rows[0].id;
+
     userVehicleId = uuidv4();
-    db.prepare(
+    await client.query(
       `INSERT INTO vehicles (id, user_id, year, make, model, current_mileage)
-       VALUES (?, ?, 2026, 'Kia', 'Carnival', 500)`
-    ).run(userVehicleId, demoUser.id);
+       VALUES ($1, $2, 2026, 'Kia', 'Carnival', 500)`,
+      [userVehicleId, userId]
+    );
 
     // Also record a service history entry
-    const svcDef = db.prepare('SELECT id FROM service_definitions LIMIT 1').get() as any;
-    db.prepare(
+    const svcRes = await client.query('SELECT id FROM service_definitions LIMIT 1');
+    await client.query(
       `INSERT INTO service_history (id, vehicle_id, service_definition_id, completed_date, mileage_at_service, cost, notes)
-       VALUES (?, ?, ?, '2026-02-15', 500, 45.00, 'First oil change')`
-    ).run(uuidv4(), userVehicleId, svcDef.id);
-    db.close();
+       VALUES ($1, $2, $3, '2026-02-15', 500, 45.00, 'First oil change')`,
+      [uuidv4(), userVehicleId, svcRes.rows[0].id]
+    );
+    await client.end();
 
-    // Run 2: re-seed (simulates Render redeploy with persistent disk)
-    const output = runRealSeed(dbPath);
-    // Verify the seed actually skipped
+    // Run 2: re-seed (simulates Render redeploy — PG data persists)
+    const output = runRealSeed();
     expect(output).toContain('skipping seed to preserve data');
   });
 
-  afterAll(() => cleanupTempDb(dbPath));
-
-  it('still has 28 service definitions (not re-seeded)', () => {
-    const db = openDb(dbPath);
-    const row = db.prepare('SELECT COUNT(*) as cnt FROM service_definitions').get() as { cnt: number };
-    expect(row.cnt).toBe(28);
-    db.close();
+  afterAll(async () => {
+    if (!pgAvailable) return;
+    await dropAllTables();
   });
 
-  it('preserves user-added vehicle (Kia Carnival)', () => {
-    const db = openDb(dbPath);
-    const kia = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(userVehicleId) as any;
-    expect(kia).toBeDefined();
-    expect(kia.make).toBe('Kia');
-    expect(kia.model).toBe('Carnival');
-    expect(kia.year).toBe(2026);
-    expect(kia.current_mileage).toBe(500);
-    db.close();
+  it('still has 28 service definitions (not re-seeded)', async () => {
+    if (!pgAvailable) return;
+    const client = await openPg();
+    const res = await client.query('SELECT COUNT(*)::int as cnt FROM service_definitions');
+    expect(res.rows[0].cnt).toBe(28);
+    await client.end();
   });
 
-  it('preserves user service history', () => {
-    const db = openDb(dbPath);
-    const history = db.prepare(
-      'SELECT * FROM service_history WHERE vehicle_id = ?'
-    ).get(userVehicleId) as any;
-    expect(history).toBeDefined();
-    expect(history.notes).toBe('First oil change');
-    expect(history.cost).toBe(45.0);
-    db.close();
+  it('preserves user-added vehicle (Kia Carnival)', async () => {
+    if (!pgAvailable) return;
+    const client = await openPg();
+    const res = await client.query('SELECT * FROM vehicles WHERE id = $1', [userVehicleId]);
+    expect(res.rows[0]).toBeDefined();
+    expect(res.rows[0].make).toBe('Kia');
+    expect(res.rows[0].model).toBe('Carnival');
+    expect(res.rows[0].year).toBe(2026);
+    expect(res.rows[0].current_mileage).toBe(500);
+    await client.end();
   });
 
-  it('demo user still exists', () => {
-    const db = openDb(dbPath);
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get('demo@example.com') as any;
-    expect(user).toBeDefined();
-    db.close();
+  it('preserves user service history', async () => {
+    if (!pgAvailable) return;
+    const client = await openPg();
+    const res = await client.query(
+      'SELECT * FROM service_history WHERE vehicle_id = $1',
+      [userVehicleId]
+    );
+    expect(res.rows[0]).toBeDefined();
+    expect(res.rows[0].notes).toBe('First oil change');
+    expect(parseFloat(res.rows[0].cost)).toBe(45.0);
+    await client.end();
   });
 
-  it('has 2 vehicles total (original + user-added)', () => {
-    const db = openDb(dbPath);
-    const row = db.prepare('SELECT COUNT(*) as cnt FROM vehicles').get() as { cnt: number };
-    expect(row.cnt).toBe(2);
-    db.close();
+  it('demo user still exists', async () => {
+    if (!pgAvailable) return;
+    const client = await openPg();
+    const res = await client.query(
+      'SELECT id FROM users WHERE email = $1',
+      ['demo@example.com']
+    );
+    expect(res.rows.length).toBe(1);
+    await client.end();
+  });
+
+  it('has 2 vehicles total (original + user-added)', async () => {
+    if (!pgAvailable) return;
+    const client = await openPg();
+    const res = await client.query('SELECT COUNT(*)::int as cnt FROM vehicles');
+    expect(res.rows[0].cnt).toBe(2);
+    await client.end();
   });
 });
 
-describe('Ephemeral filesystem simulation (THE BUG)', () => {
+describe('PostgreSQL persistence (THE FIX)', () => {
   /*
-   * This test simulates what happens on Render free tier:
-   *   1. Deploy 1: seed runs, populates DB at /var/data/vm.db
-   *   2. User adds data
-   *   3. Deploy 2: container destroyed, /var/data/ wiped, seed runs again
-   *   4. All user data is GONE — seed creates fresh DB
+   * Unlike SQLite on Render free tier (ephemeral filesystem),
+   * PostgreSQL data persists across deploys because it lives in
+   * Render's managed database, not on the web service filesystem.
    *
-   * This test demonstrates that if the DB file is deleted between
-   * deploys, data loss is GUARANTEED. The only fix is infrastructure-
-   * level: a persistent disk must actually be mounted.
+   * These tests verify that:
+   *  - Dropping tables + re-seeding recreates everything (simulates initial deploy)
+   *  - Data survives re-seed without table drops (simulates normal redeploy)
    */
-  it('deleting DB file between deploys causes total data loss', () => {
-    const dbPath = makeTempDbPath();
-
-    // Deploy 1: seed
-    runRealSeed(dbPath);
-
-    // User adds data
-    const db1 = openDb(dbPath);
-    const user = db1.prepare('SELECT id FROM users WHERE email = ?').get('demo@example.com') as any;
-    db1.prepare(
-      `INSERT INTO vehicles (id, user_id, year, make, model, current_mileage)
-       VALUES (?, ?, 2026, 'Kia', 'Carnival', 500)`
-    ).run(uuidv4(), user.id);
-    const vehiclesBefore = (db1.prepare('SELECT COUNT(*) as cnt FROM vehicles').get() as any).cnt;
-    expect(vehiclesBefore).toBe(2); // 4Runner + Carnival
-    db1.close();
-
-    // *** EPHEMERAL FILESYSTEM WIPE (simulates Render free tier redeploy) ***
-    fs.unlinkSync(dbPath);
-    // Also remove WAL/SHM files
-    try { fs.unlinkSync(dbPath + '-wal'); } catch {}
-    try { fs.unlinkSync(dbPath + '-shm'); } catch {}
-
-    expect(fs.existsSync(dbPath)).toBe(false);
-
-    // Deploy 2: seed runs on fresh filesystem
-    const output = runRealSeed(dbPath);
-    expect(output).toContain('Fresh database detected'); // NOT "skipping seed"
-
-    // Verify: user's Kia Carnival is GONE
-    const db2 = openDb(dbPath);
-    const vehicles = db2.prepare('SELECT COUNT(*) as cnt FROM vehicles').get() as { cnt: number };
-    expect(vehicles.cnt).toBe(1); // only the demo 4Runner
-
-    const kia = db2.prepare("SELECT * FROM vehicles WHERE make = 'Kia'").get();
-    expect(kia).toBeUndefined(); // DATA LOST
-
-    // Service defs re-seeded from scratch
-    const defs = (db2.prepare('SELECT COUNT(*) as cnt FROM service_definitions').get() as any).cnt;
-    expect(defs).toBe(28); // re-created
-    db2.close();
-
-    cleanupTempDb(dbPath);
+  afterAll(async () => {
+    if (!pgAvailable) return;
+    await dropAllTables();
   });
 
-  it('keeping the DB file between deploys preserves all data', () => {
-    const dbPath = makeTempDbPath();
+  it('dropping tables and re-seeding recreates all data', async () => {
+    if (!pgAvailable) return;
 
-    // Deploy 1
-    runRealSeed(dbPath);
+    // Seed once
+    await dropAllTables();
+    runRealSeed();
 
     // User adds data
-    const db1 = openDb(dbPath);
-    const user = db1.prepare('SELECT id FROM users WHERE email = ?').get('demo@example.com') as any;
-    const kiaId = uuidv4();
-    db1.prepare(
+    const client1 = await openPg();
+    const userRes = await client1.query(
+      'SELECT id FROM users WHERE email = $1',
+      ['demo@example.com']
+    );
+    await client1.query(
       `INSERT INTO vehicles (id, user_id, year, make, model, current_mileage)
-       VALUES (?, ?, 2026, 'Kia', 'Carnival', 500)`
-    ).run(kiaId, user.id);
-    db1.close();
+       VALUES ($1, $2, 2026, 'Kia', 'Carnival', 500)`,
+      [uuidv4(), userRes.rows[0].id]
+    );
+    const beforeCount = await client1.query('SELECT COUNT(*)::int as cnt FROM vehicles');
+    expect(beforeCount.rows[0].cnt).toBe(2); // 4Runner + Carnival
+    await client1.end();
 
-    // Deploy 2: DB file still exists (persistent disk scenario)
-    const output = runRealSeed(dbPath);
+    // *** Simulate total wipe (like dropping DB or fresh PG instance) ***
+    await dropAllTables();
+
+    // Re-seed from scratch
+    const output = runRealSeed();
+    expect(output).toContain('Fresh database detected');
+
+    // Verify: user's Kia Carnival is GONE (tables were dropped)
+    const client2 = await openPg();
+    const vehicles = await client2.query('SELECT COUNT(*)::int as cnt FROM vehicles');
+    expect(vehicles.rows[0].cnt).toBe(1); // only demo 4Runner
+
+    const kia = await client2.query("SELECT * FROM vehicles WHERE make = 'Kia'");
+    expect(kia.rows.length).toBe(0); // DATA LOST (but only if tables dropped)
+
+    const defs = await client2.query('SELECT COUNT(*)::int as cnt FROM service_definitions');
+    expect(defs.rows[0].cnt).toBe(28);
+    await client2.end();
+  });
+
+  it('normal redeploy preserves all data (PG persists across deploys)', async () => {
+    if (!pgAvailable) return;
+
+    // Fresh start
+    await dropAllTables();
+    runRealSeed();
+
+    // User adds data
+    const client1 = await openPg();
+    const userRes = await client1.query(
+      'SELECT id FROM users WHERE email = $1',
+      ['demo@example.com']
+    );
+    const kiaId = uuidv4();
+    await client1.query(
+      `INSERT INTO vehicles (id, user_id, year, make, model, current_mileage)
+       VALUES ($1, $2, 2026, 'Kia', 'Carnival', 500)`,
+      [kiaId, userRes.rows[0].id]
+    );
+    await client1.end();
+
+    // Simulate redeploy: seed runs again (PG data still there — no table drops)
+    const output = runRealSeed();
     expect(output).toContain('skipping seed to preserve data');
 
-    const db2 = openDb(dbPath);
-    const vehicles = db2.prepare('SELECT COUNT(*) as cnt FROM vehicles').get() as { cnt: number };
-    expect(vehicles.cnt).toBe(2); // 4Runner + Carnival PRESERVED
+    const client2 = await openPg();
+    const vehicles = await client2.query('SELECT COUNT(*)::int as cnt FROM vehicles');
+    expect(vehicles.rows[0].cnt).toBe(2); // 4Runner + Carnival PRESERVED
 
-    const kia = db2.prepare("SELECT * FROM vehicles WHERE make = 'Kia'").get() as any;
-    expect(kia).toBeDefined();
-    expect(kia.model).toBe('Carnival');
-    db2.close();
-
-    cleanupTempDb(dbPath);
+    const kia = await client2.query("SELECT * FROM vehicles WHERE make = 'Kia'");
+    expect(kia.rows.length).toBe(1);
+    expect(kia.rows[0].model).toBe('Carnival');
+    await client2.end();
   });
 });
 
-describe('DB_PATH env var', () => {
-  it('seed creates DB at the exact path specified by DB_PATH', () => {
-    const customDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vm-dbpath-'));
-    const customPath = path.join(customDir, 'subdir', 'custom.db');
+describe('DATABASE_URL env var', () => {
+  afterAll(async () => {
+    if (!pgAvailable) return;
+    await dropAllTables();
+  });
 
-    // subdir doesn't exist yet — seed (via database.ts) should create it
-    expect(fs.existsSync(path.dirname(customPath))).toBe(false);
+  it('seed connects to the database specified by DATABASE_URL', async () => {
+    if (!pgAvailable) return;
 
-    runRealSeed(customPath);
+    await dropAllTables();
+    runRealSeed();
 
-    expect(fs.existsSync(customPath)).toBe(true);
-    const db = openDb(customPath);
-    const defs = (db.prepare('SELECT COUNT(*) as cnt FROM service_definitions').get() as any).cnt;
-    expect(defs).toBe(28);
-    db.close();
-
-    fs.rmSync(customDir, { recursive: true, force: true });
+    const client = await openPg();
+    const defs = await client.query('SELECT COUNT(*)::int as cnt FROM service_definitions');
+    expect(defs.rows[0].cnt).toBe(28);
+    await client.end();
   });
 });

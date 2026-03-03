@@ -5,6 +5,7 @@ interface ScheduleItem {
   service_definition_id: string;
   service_name: string;
   category: string;
+  service_type?: 'change' | 'inspect' | 'service';
   mileage_interval: number | null;
   month_interval: number | null;
   status: 'ok' | 'upcoming' | 'overdue';
@@ -18,22 +19,18 @@ interface MaintenanceMapProps {
   onServiceClick?: (item: ScheduleItem) => void;
 }
 
-// Color palette for service categories
-const CATEGORY_COLORS: Record<string, string> = {
-  Engine: '#2563eb',       // blue
-  'Tires & Wheels': '#7c3aed', // violet
-  Brakes: '#dc2626',      // red
-  Drivetrain: '#ea580c',   // orange
-  Steering: '#0891b2',     // cyan
-  Suspension: '#4f46e5',   // indigo
-  HVAC: '#059669',         // emerald
-  Electrical: '#d97706',   // amber
-  Exterior: '#6b7280',     // gray
-  General: '#8b5cf6',      // purple
+// ── Service-type → color (data-driven from DB service_type column) ──
+// Black (#1f2937) = change   — consumable replaced at fixed OEM interval
+// Yellow (#eab308) = inspect — inspect per schedule; replace only if needed
+// Red (#dc2626)   = service  — major scheduled task at fixed interval
+const SERVICE_TYPE_COLOR_MAP: Record<string, string> = {
+  change:  '#1f2937',   // black (fluids, filters)
+  inspect: '#eab308',   // yellow (inspections, conditional)
+  service: '#dc2626',   // red (major scheduled tasks)
 };
 
-function getCategoryColor(category: string | null): string {
-  return CATEGORY_COLORS[category || 'General'] || '#6b7280';
+function getServiceColor(item: { service_type?: string }): string {
+  return SERVICE_TYPE_COLOR_MAP[item.service_type || ''] || '#dc2626';
 }
 
 // Determine the ring (border) color for a circle based on its column mileage
@@ -126,28 +123,48 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
 
   return (
     <div className="card overflow-hidden">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="text-lg font-bold text-gray-900">Maintenance Map</h3>
           <p className="text-xs text-gray-500">{vehicleLabel} • Every {axisStep >= 1000 ? `${(axisStep / 1000)}K` : axisStep.toLocaleString()} mi to {(maxMileage / 1000).toFixed(0)}K</p>
         </div>
-        <div className="flex items-center gap-3 text-xs">
-          <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-green-600 inline-block"></span>
-            Completed
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-gray-400 inline-block"></span>
-            Scheduled
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-yellow-600 inline-block"></span>
-            Upcoming
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-red-600 inline-block"></span>
-            Overdue
-          </span>
+        <div className="flex items-start gap-4">
+          {/* Service Type Legend */}
+          <div className="border border-gray-200 rounded-lg px-3 py-2">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Service Legend</span>
+            <div className="flex items-center gap-3 text-xs mt-1.5">
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-gray-900 inline-block"></span>
+                Change Interval
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-yellow-500 inline-block"></span>
+                Inspect / As needed
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-red-600 inline-block"></span>
+                Service Interval
+              </span>
+            </div>
+          </div>
+          {/* Status Legend */}
+          <div className="border border-gray-200 rounded-lg px-3 py-2">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Status</span>
+            <div className="flex items-center gap-3 text-xs mt-1.5">
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full border-[3px] border-green-600 inline-block"></span>
+                Complete
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full border-[3px] border-yellow-600 inline-block"></span>
+                Upcoming
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full border-[3px] border-red-600 inline-block"></span>
+                Overdue
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -178,7 +195,7 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
                   style={{ paddingBottom: HEADER_HEIGHT + LEGEND_OFFSET }}
                 >
                   {items.map((item) => {
-                    const catColor = getCategoryColor(item.category);
+                    const catColor = getServiceColor(item);
                     const ringColor = getRingColor(item, mileage, currentMileage);
                     return (
                       <button
@@ -233,7 +250,7 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
         <h4 className="text-sm font-semibold text-gray-700 mb-3">Service Legend</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-2.5">
           {serviceList.map((svc) => {
-            const color = getCategoryColor(svc.category);
+            const color = getServiceColor(svc);
             return (
               <button
                 key={svc.id}

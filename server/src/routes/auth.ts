@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import db from '../database';
+import { queryOne, queryAll, execute } from '../database';
 import { RegisterSchema, LoginSchema, UpdateProfileSchema, User } from '../types';
 import { AuthRequest, authMiddleware, generateToken, AUTH_COOKIE_NAME, AUTH_COOKIE_OPTIONS } from '../middleware/auth';
 import { updateVehicleStatuses } from '../services/scheduleEngine';
@@ -19,7 +19,7 @@ router.post('/register', async (req: AuthRequest, res: Response) => {
 
     const { email, password, firstName, lastName } = parsed.data;
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    const existing = await queryOne('SELECT id FROM users WHERE email = $1', [email]);
     if (existing) {
       res.status(409).json({ error: 'Email already registered' });
       return;
@@ -28,10 +28,11 @@ router.post('/register', async (req: AuthRequest, res: Response) => {
     const passwordHash = await bcrypt.hash(password, 12);
     const id = uuidv4();
 
-    db.prepare(`
-      INSERT INTO users (id, email, password_hash, first_name, last_name)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, email, passwordHash, firstName || null, lastName || null);
+    await execute(
+      `INSERT INTO users (id, email, password_hash, first_name, last_name)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [id, email, passwordHash, firstName || null, lastName || null]
+    );
 
     const token = generateToken(id, false);
 
@@ -58,7 +59,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
     }
 
     const { email, password } = parsed.data;
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as User | undefined;
+    const user = await queryOne<User>('SELECT * FROM users WHERE email = $1', [email]);
 
     if (!user) {
       res.status(401).json({ error: 'Invalid email or password' });
@@ -93,9 +94,9 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
 });
 
 // ─── Get Profile ────────────────────────────────────────
-router.get('/me', authMiddleware, (req: AuthRequest, res: Response) => {
+router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.userId) as User | undefined;
+    const user = await queryOne<User>('SELECT * FROM users WHERE id = $1', [req.userId]);
     if (!user) {
       res.status(404).json({ error: 'User not found' });
       return;
@@ -119,7 +120,7 @@ router.get('/me', authMiddleware, (req: AuthRequest, res: Response) => {
 });
 
 // ─── Update Profile ─────────────────────────────────────
-router.put('/me', authMiddleware, (req: AuthRequest, res: Response) => {
+router.put('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const parsed = UpdateProfileSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -131,28 +132,29 @@ router.put('/me', authMiddleware, (req: AuthRequest, res: Response) => {
 
     const updates: string[] = [];
     const values: any[] = [];
+    let paramIdx = 1;
 
-    if (firstName !== undefined) { updates.push('first_name = ?'); values.push(firstName); }
-    if (lastName !== undefined) { updates.push('last_name = ?'); values.push(lastName); }
-    if (emailNotifications !== undefined) { updates.push('email_notifications = ?'); values.push(emailNotifications ? 1 : 0); }
-    if (reminderLeadMiles !== undefined) { updates.push('reminder_lead_miles = ?'); values.push(reminderLeadMiles); }
-    if (reminderLeadDays !== undefined) { updates.push('reminder_lead_days = ?'); values.push(reminderLeadDays); }
+    if (firstName !== undefined) { updates.push(`first_name = $${paramIdx++}`); values.push(firstName); }
+    if (lastName !== undefined) { updates.push(`last_name = $${paramIdx++}`); values.push(lastName); }
+    if (emailNotifications !== undefined) { updates.push(`email_notifications = $${paramIdx++}`); values.push(emailNotifications ? 1 : 0); }
+    if (reminderLeadMiles !== undefined) { updates.push(`reminder_lead_miles = $${paramIdx++}`); values.push(reminderLeadMiles); }
+    if (reminderLeadDays !== undefined) { updates.push(`reminder_lead_days = $${paramIdx++}`); values.push(reminderLeadDays); }
 
     if (updates.length === 0) {
       res.status(400).json({ error: 'No fields to update' });
       return;
     }
 
-    updates.push("updated_at = datetime('now')");
+    updates.push('updated_at = NOW()');
     values.push(req.userId);
 
-    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+    await execute(`UPDATE users SET ${updates.join(', ')} WHERE id = $${paramIdx}`, values);
 
     // Re-evaluate all vehicle statuses when reminder thresholds change
     if (reminderLeadMiles !== undefined || reminderLeadDays !== undefined) {
-      const vehicles = db.prepare('SELECT id FROM vehicles WHERE user_id = ?').all(req.userId) as { id: string }[];
+      const vehicles = await queryAll<{ id: string }>('SELECT id FROM vehicles WHERE user_id = $1', [req.userId]);
       for (const v of vehicles) {
-        updateVehicleStatuses(v.id);
+        await updateVehicleStatuses(v.id);
       }
     }
 
@@ -164,16 +166,15 @@ router.put('/me', authMiddleware, (req: AuthRequest, res: Response) => {
 });
 
 // ─── Password Reset Request (simplified — logs token) ───
-router.post('/password-reset', (req: AuthRequest, res: Response) => {
+router.post('/password-reset', async (req: AuthRequest, res: Response) => {
   try {
     const { email } = req.body;
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as User | undefined;
+    const user = await queryOne<User>('SELECT id FROM users WHERE email = $1', [email]);
 
     // Always respond success to prevent email enumeration
     if (user) {
       const resetToken = uuidv4();
       console.log(`[Password Reset] Token for ${email}: ${resetToken}`);
-      // In production: store token with expiry and send email
     }
 
     res.json({ message: 'If the email exists, a reset link has been sent.' });

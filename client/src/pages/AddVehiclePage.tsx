@@ -1,7 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
-import { Search, Car } from 'lucide-react';
+import { Search, Car, ChevronDown } from 'lucide-react';
+
+/** Map NHTSA drive-type strings to our standard dropdown values */
+function mapNhtsaDriveType(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  if (lower.includes('4x4') || lower.includes('4wd') || lower.includes('4-wheel')) return '4WD';
+  if (lower.includes('awd') || lower.includes('all-wheel') || lower.includes('all wheel')) return 'AWD';
+  if (lower.includes('fwd') || lower.includes('front-wheel') || lower.includes('front wheel')) return 'FWD';
+  if (lower.includes('rwd') || lower.includes('rear-wheel') || lower.includes('rear wheel')) return 'RWD';
+  return '';
+}
 
 export default function AddVehiclePage() {
   const navigate = useNavigate();
@@ -20,6 +31,46 @@ export default function AddVehiclePage() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // OEM catalog dropdowns
+  const [makes, setMakes] = useState<string[]>([]);
+  const [models, setModels] = useState<string[]>([]);
+  const [years, setYears] = useState<number[]>([]);
+  const vinDecodedModel = useRef<string>(''); // stash model from VIN before catalog loads
+
+  // Load makes on mount
+  useEffect(() => {
+    api.get<string[]>('/catalog/makes').then(setMakes).catch(() => {});
+  }, []);
+
+  // Load models when make changes
+  useEffect(() => {
+    setModels([]);
+    setYears([]);
+    if (!make) return;
+    api.get<string[]>(`/catalog/models?make=${encodeURIComponent(make)}`).then(setModels).catch(() => {});
+  }, [make]);
+
+  // Load years when model changes
+  useEffect(() => {
+    setYears([]);
+    if (!make || !model) return;
+    api.get<number[]>(`/catalog/years?make=${encodeURIComponent(make)}&model=${encodeURIComponent(model)}`)
+      .then(setYears)
+      .catch(() => {});
+  }, [make, model]);
+
+  // When catalog models load, normalize VIN-decoded model to match catalog casing
+  useEffect(() => {
+    if (models.length > 0 && vinDecodedModel.current) {
+      const target = vinDecodedModel.current;
+      const matched = models.find(m => m.toLowerCase() === target.toLowerCase());
+      if (matched) {
+        setModel(matched);
+      }
+      vinDecodedModel.current = ''; // only normalize once
+    }
+  }, [models]);
+
   const handleVinLookup = async () => {
     if (vin.length !== 17) {
       setVinError('VIN must be exactly 17 characters');
@@ -29,11 +80,19 @@ export default function AddVehiclePage() {
     setVinLoading(true);
     try {
       const result = await api.get<any>(`/vin/decode/${vin}`);
+
+      // Normalize make against catalog (case-insensitive)
+      const decodedMake = result.make || '';
+      const matchedMake = makes.find(m => m.toLowerCase() === decodedMake.toLowerCase()) || decodedMake;
+
+      // Stash VIN model so the catalog-normalizing effect can match it
+      vinDecodedModel.current = result.model || '';
+
       setYear(result.year?.toString() || '');
-      setMake(result.make || '');
+      setMake(matchedMake);
       setModel(result.model || '');
       setEngine(result.engine || '');
-      setDriveType(result.driveType || '');
+      setDriveType(mapNhtsaDriveType(result.driveType));
       setTrimLevel(result.trimLevel || '');
       setMode('manual'); // Switch to show all fields
     } catch (err: any) {
@@ -157,39 +216,84 @@ export default function AddVehiclePage() {
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
-              <input
-                type="number"
-                className="input-field"
-                value={year}
-                onChange={e => setYear(e.target.value)}
-                min={1900}
-                max={currentYear + 1}
-                placeholder="2024"
-                required
-              />
-            </div>
-            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Make *</label>
-              <input
-                type="text"
-                className="input-field"
-                value={make}
-                onChange={e => setMake(e.target.value)}
-                placeholder="Toyota"
-                required
-              />
+              {makes.length > 0 ? (
+                <div className="relative">
+                  <select
+                    className="input-field appearance-none pr-8"
+                    value={make}
+                    onChange={e => { setMake(e.target.value); setModel(''); setYear(''); }}
+                    required
+                  >
+                    <option value="">Select make...</option>
+                    {makes.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  className="input-field"
+                  value={make}
+                  onChange={e => setMake(e.target.value)}
+                  placeholder="Toyota"
+                  required
+                />
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Model *</label>
-              <input
-                type="text"
-                className="input-field"
-                value={model}
-                onChange={e => setModel(e.target.value)}
-                placeholder="Tacoma"
-                required
-              />
+              {models.length > 0 ? (
+                <div className="relative">
+                  <select
+                    className="input-field appearance-none pr-8"
+                    value={model}
+                    onChange={e => { setModel(e.target.value); setYear(''); }}
+                    required
+                  >
+                    <option value="">Select model...</option>
+                    {models.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  className="input-field"
+                  value={model}
+                  onChange={e => setModel(e.target.value)}
+                  placeholder={make ? 'Select make first' : 'Tacoma'}
+                  required
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Year *</label>
+              {years.length > 0 ? (
+                <div className="relative">
+                  <select
+                    className="input-field appearance-none pr-8"
+                    value={year}
+                    onChange={e => setYear(e.target.value)}
+                    required
+                  >
+                    <option value="">Select year...</option>
+                    {years.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+              ) : (
+                <input
+                  type="number"
+                  className="input-field"
+                  value={year}
+                  onChange={e => setYear(e.target.value)}
+                  min={1900}
+                  max={2026}
+                  placeholder={model ? 'N/A' : '2026'}
+                  required
+                />
+              )}
             </div>
           </div>
 

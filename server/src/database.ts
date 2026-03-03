@@ -1,28 +1,53 @@
-import Database from 'better-sqlite3';
-import type BetterSqlite3 from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import { Pool, PoolClient, QueryResultRow } from 'pg';
 
-// Allow an explicit DB_PATH env var (e.g. pointing at a Render persistent disk).
-// Fallback: <SERVER_ROOT>/data/vehicle_maintenance.db
-const SERVER_ROOT = process.env.SERVER_ROOT || path.resolve(__dirname, '..');
-const DB_PATH = process.env.DB_PATH || path.join(SERVER_ROOT, 'data', 'vehicle_maintenance.db');
-const DB_DIR = path.dirname(DB_PATH);
+// ─── Connection ──────────────────────────────────────────
+// Render injects DATABASE_URL for managed PostgreSQL databases.
+// Locally you can set DATABASE_URL or fall back to a local dev PG.
+const DATABASE_URL =
+  process.env.DATABASE_URL ||
+  'postgresql://postgres:postgres@localhost:5432/vehicle_maintenance';
 
-export { DB_PATH };
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  // Render managed PG requires SSL in production
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+  max: 10,
+  idleTimeoutMillis: 30_000,
+});
 
-if (!fs.existsSync(DB_DIR)) {
-  fs.mkdirSync(DB_DIR, { recursive: true });
+pool.on('error', (err) => {
+  console.error('[PG Pool] Unexpected error on idle client', err);
+});
+
+export { DATABASE_URL };
+
+// ─── Helper: query shortcut ─────────────────────────────
+// Drop-in for the most common usage patterns.
+export async function query<T extends QueryResultRow = any>(text: string, params?: any[]) {
+  return pool.query<T>(text, params);
 }
 
-const db: BetterSqlite3.Database = new Database(DB_PATH);
+export async function queryOne<T extends QueryResultRow = any>(text: string, params?: any[]): Promise<T | undefined> {
+  const result = await pool.query<T>(text, params);
+  return result.rows[0];
+}
 
-// Enable WAL mode for better concurrent performance
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+export async function queryAll<T extends QueryResultRow = any>(text: string, params?: any[]): Promise<T[]> {
+  const result = await pool.query<T>(text, params);
+  return result.rows;
+}
 
-export function initializeDatabase(): void {
-  db.exec(`
+export async function execute(text: string, params?: any[]): Promise<void> {
+  await pool.query(text, params);
+}
+
+export async function getClient(): Promise<PoolClient> {
+  return pool.connect();
+}
+
+// ─── Schema initialisation ──────────────────────────────
+export async function initializeDatabase(): Promise<void> {
+  await pool.query(`
     -- Users table
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -34,14 +59,14 @@ export function initializeDatabase(): void {
       email_notifications INTEGER DEFAULT 1,
       reminder_lead_miles INTEGER DEFAULT 500,
       reminder_lead_days INTEGER DEFAULT 30,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Vehicles table
     CREATE TABLE IF NOT EXISTS vehicles (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       vin TEXT,
       year INTEGER NOT NULL,
       make TEXT NOT NULL,
@@ -51,19 +76,17 @@ export function initializeDatabase(): void {
       drive_type TEXT,
       current_mileage INTEGER DEFAULT 0,
       reminders_enabled INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Mileage history table
     CREATE TABLE IF NOT EXISTS mileage_entries (
       id TEXT PRIMARY KEY,
-      vehicle_id TEXT NOT NULL,
+      vehicle_id TEXT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
       mileage INTEGER NOT NULL,
-      recorded_at TEXT DEFAULT (datetime('now')),
-      notes TEXT,
-      FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+      recorded_at TIMESTAMPTZ DEFAULT NOW(),
+      notes TEXT
     );
 
     -- Service definitions (master list of service types)
@@ -72,14 +95,15 @@ export function initializeDatabase(): void {
       name TEXT NOT NULL,
       description TEXT,
       category TEXT,
+      service_type TEXT NOT NULL DEFAULT 'change',
       is_active INTEGER DEFAULT 1,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Maintenance schedule rules (OEM-based)
     CREATE TABLE IF NOT EXISTS schedule_rules (
       id TEXT PRIMARY KEY,
-      service_definition_id TEXT NOT NULL,
+      service_definition_id TEXT NOT NULL REFERENCES service_definitions(id) ON DELETE CASCADE,
       year_min INTEGER,
       year_max INTEGER,
       make TEXT,
@@ -92,15 +116,14 @@ export function initializeDatabase(): void {
       priority INTEGER DEFAULT 0,
       source TEXT,
       notes TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (service_definition_id) REFERENCES service_definitions(id) ON DELETE CASCADE
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Vehicle-specific maintenance schedule (generated per vehicle)
     CREATE TABLE IF NOT EXISTS vehicle_schedules (
       id TEXT PRIMARY KEY,
-      vehicle_id TEXT NOT NULL,
-      service_definition_id TEXT NOT NULL,
+      vehicle_id TEXT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+      service_definition_id TEXT NOT NULL REFERENCES service_definitions(id) ON DELETE CASCADE,
       mileage_interval INTEGER,
       month_interval INTEGER,
       is_combined INTEGER DEFAULT 1,
@@ -109,44 +132,54 @@ export function initializeDatabase(): void {
       status TEXT DEFAULT 'ok' CHECK(status IN ('ok', 'upcoming', 'overdue')),
       source TEXT,
       source_notes TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,
-      FOREIGN KEY (service_definition_id) REFERENCES service_definitions(id) ON DELETE CASCADE
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Service history (completed services)
     CREATE TABLE IF NOT EXISTS service_history (
       id TEXT PRIMARY KEY,
-      vehicle_id TEXT NOT NULL,
-      vehicle_schedule_id TEXT,
-      service_definition_id TEXT NOT NULL,
+      vehicle_id TEXT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+      vehicle_schedule_id TEXT REFERENCES vehicle_schedules(id) ON DELETE SET NULL,
+      service_definition_id TEXT NOT NULL REFERENCES service_definitions(id) ON DELETE CASCADE,
       completed_date TEXT NOT NULL,
       mileage_at_service INTEGER NOT NULL,
       cost REAL,
       notes TEXT,
       shop_name TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,
-      FOREIGN KEY (vehicle_schedule_id) REFERENCES vehicle_schedules(id) ON DELETE SET NULL,
-      FOREIGN KEY (service_definition_id) REFERENCES service_definitions(id) ON DELETE CASCADE
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
     -- Notifications table
     CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      vehicle_id TEXT,
-      vehicle_schedule_id TEXT,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      vehicle_id TEXT REFERENCES vehicles(id) ON DELETE SET NULL,
+      vehicle_schedule_id TEXT REFERENCES vehicle_schedules(id) ON DELETE SET NULL,
       type TEXT NOT NULL CHECK(type IN ('upcoming', 'overdue', 'info')),
       title TEXT NOT NULL,
       message TEXT NOT NULL,
       is_read INTEGER DEFAULT 0,
       email_sent INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE SET NULL,
-      FOREIGN KEY (vehicle_schedule_id) REFERENCES vehicle_schedules(id) ON DELETE SET NULL
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- ── Migrations (safe to re-run) ──────────────────────
+    -- Add service_type column if missing (existing DBs created before this column)
+    ALTER TABLE service_definitions ADD COLUMN IF NOT EXISTS service_type TEXT NOT NULL DEFAULT 'change';
+
+    -- Backfill service_type for existing rows (idempotent — only updates rows still at default)
+    UPDATE service_definitions SET service_type = 'inspect' WHERE service_type = 'change' AND name IN (
+      'Drive Belt (Serpentine)', 'PCV Valve',
+      'Brake Pads & Rotors Inspection', 'Parking Brake Adjustment',
+      'Wheel Alignment',
+      'Ball Joints & Dust Covers', 'Steering Linkage & Boots',
+      'Battery & Terminals', 'Wiper Blades',
+      'Multi-Point Inspection', 'Exhaust System Inspection',
+      'Propeller Shaft Lubrication'
+    );
+    UPDATE service_definitions SET service_type = 'service' WHERE service_type = 'change' AND name IN (
+      'Spark Plugs', 'Timing Belt/Chain', 'Valve Clearance Adjustment', 'Tire Rotation'
     );
 
     -- Indexes for performance
@@ -161,4 +194,4 @@ export function initializeDatabase(): void {
   `);
 }
 
-export default db;
+export default pool;

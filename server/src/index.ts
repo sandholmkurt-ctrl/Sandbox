@@ -3,7 +3,7 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import fs from 'fs';
 import cron from 'node-cron';
-import db, { DB_PATH, initializeDatabase } from './database';
+import { initializeDatabase, queryOne, queryAll } from './database';
 import authRoutes from './routes/auth';
 import vehicleRoutes from './routes/vehicles';
 import mileageRoutes from './routes/mileage';
@@ -12,6 +12,7 @@ import notificationRoutes from './routes/notifications';
 import dashboardRoutes from './routes/dashboard';
 import vinRoutes from './routes/vin';
 import adminRoutes from './routes/admin';
+import catalogRoutes from './routes/catalog';
 import { updateAllVehicleStatuses } from './services/scheduleEngine';
 import { generateNotifications } from './services/notificationService';
 import { seed } from './seed';
@@ -84,7 +85,7 @@ app.use((req, _res, next) => {
 });
 
 // ─── Initialize Database ────────────────────────────────
-initializeDatabase();
+// Database initializes at server start (async) — see start() below
 
 // ─── Routes ─────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
@@ -95,58 +96,51 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/vin', vinRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/catalog', catalogRoutes);
 
 // ─── Health Check ───────────────────────────────────────
-app.get('/api/health', (_req, res) => {
-  let dbAge = 'unknown';
-  let dbPersistent = false;
-  let dbFileSize = 0;
-  try {
-    const stat = fs.statSync(DB_PATH);
-    dbFileSize = stat.size;
-    const ageMs = Date.now() - stat.birthtimeMs;
-    const ageMins = Math.floor(ageMs / 60_000);
-    if (ageMins < 60) dbAge = `${ageMins}m`;
-    else if (ageMins < 1440) dbAge = `${Math.floor(ageMins / 60)}h ${ageMins % 60}m`;
-    else dbAge = `${Math.floor(ageMins / 1440)}d ${Math.floor((ageMins % 1440) / 60)}h`;
-    // If DB file is older than 10 minutes, it likely survived a deploy
-    dbPersistent = ageMins > 10;
-  } catch {}
+app.get('/api/health', async (_req, res) => {
   let counts: any = {};
   try {
+    const users = await queryOne<{ c: string }>('SELECT COUNT(*) as c FROM users');
+    const vehicles = await queryOne<{ c: string }>('SELECT COUNT(*) as c FROM vehicles');
+    const defs = await queryOne<{ c: string }>('SELECT COUNT(*) as c FROM service_definitions');
+    const rules = await queryOne<{ c: string }>('SELECT COUNT(*) as c FROM schedule_rules');
     counts = {
-      users: (db.prepare('SELECT COUNT(*) as c FROM users').get() as any).c,
-      vehicles: (db.prepare('SELECT COUNT(*) as c FROM vehicles').get() as any).c,
-      service_definitions: (db.prepare('SELECT COUNT(*) as c FROM service_definitions').get() as any).c,
-      schedule_rules: (db.prepare('SELECT COUNT(*) as c FROM schedule_rules').get() as any).c,
+      users: parseInt(users?.c || '0', 10),
+      vehicles: parseInt(vehicles?.c || '0', 10),
+      service_definitions: parseInt(defs?.c || '0', 10),
+      schedule_rules: parseInt(rules?.c || '0', 10),
     };
   } catch {}
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     db: {
-      path: DB_PATH,
-      envVar: process.env.DB_PATH || '(not set — using fallback)',
-      fileExists: fs.existsSync(DB_PATH),
-      fileSize: dbFileSize,
-      fileAge: dbAge,
-      likelyPersistent: dbPersistent,
+      type: 'postgresql',
+      databaseUrl: process.env.DATABASE_URL ? '(set)' : '(not set)',
       counts,
     },
   });
 });
 
 // ─── Debug / Diagnostics (no auth) ──────────────────────
-app.get('/api/debug', (_req, res) => {
+app.get('/api/debug', async (_req, res) => {
   const clientDist = path.resolve(__dirname, '..', '..', 'client', 'dist');
   const indexHtml = path.join(clientDist, 'index.html');
   let dbCheck: any = { ok: false };
   try {
-    const userCount = (db.prepare('SELECT COUNT(*) as c FROM users').get() as any).c;
-    const vehicleCount = (db.prepare('SELECT COUNT(*) as c FROM vehicles').get() as any).c;
-    const ruleCount = (db.prepare('SELECT COUNT(*) as c FROM schedule_rules').get() as any).c;
-    const svcDefCount = (db.prepare('SELECT COUNT(*) as c FROM service_definitions').get() as any).c;
-    dbCheck = { ok: true, users: userCount, vehicles: vehicleCount, rules: ruleCount, serviceDefinitions: svcDefCount };
+    const users = await queryOne<{ c: string }>('SELECT COUNT(*) as c FROM users');
+    const vehicles = await queryOne<{ c: string }>('SELECT COUNT(*) as c FROM vehicles');
+    const rules = await queryOne<{ c: string }>('SELECT COUNT(*) as c FROM schedule_rules');
+    const defs = await queryOne<{ c: string }>('SELECT COUNT(*) as c FROM service_definitions');
+    dbCheck = {
+      ok: true,
+      users: parseInt(users?.c || '0', 10),
+      vehicles: parseInt(vehicles?.c || '0', 10),
+      rules: parseInt(rules?.c || '0', 10),
+      serviceDefinitions: parseInt(defs?.c || '0', 10),
+    };
   } catch (e: any) {
     dbCheck = { ok: false, error: e.message };
   }
@@ -159,8 +153,6 @@ app.get('/api/debug', (_req, res) => {
       __dirname,
     },
     paths: {
-      dbPath: DB_PATH,
-      dbExists: fs.existsSync(DB_PATH),
       clientDist,
       clientDistExists: fs.existsSync(clientDist),
       indexHtml,
@@ -176,9 +168,9 @@ app.get('/api/debug', (_req, res) => {
 // Run every day at 6:00 AM — update statuses and send notifications
 cron.schedule('0 6 * * *', () => {
   console.log('[Cron] Running daily maintenance status check...');
-  updateAllVehicleStatuses();
-  generateNotifications();
-  console.log('[Cron] Daily check complete.');
+  updateAllVehicleStatuses().then(() => generateNotifications()).then(() => {
+    console.log('[Cron] Daily check complete.');
+  }).catch(err => console.error('[Cron] Error:', err));
 });
 
 // ─── Serve React client in production ────────────────────
@@ -186,8 +178,7 @@ const clientDist = path.resolve(__dirname, '..', '..', 'client', 'dist');
 console.log(`[Boot] clientDist resolved to: ${clientDist}`);
 console.log(`[Boot] clientDist exists: ${fs.existsSync(clientDist)}`);
 console.log(`[Boot] index.html exists: ${fs.existsSync(path.join(clientDist, 'index.html'))}`);
-console.log(`[Boot] DB path: ${DB_PATH}`);
-console.log(`[Boot] DB exists: ${fs.existsSync(DB_PATH)}`);
+console.log(`[Boot] DATABASE_URL: ${process.env.DATABASE_URL ? '(set)' : '(not set)'}`);
 
 app.use(express.static(clientDist));
 
@@ -208,23 +199,22 @@ app.get('*', (req, res) => {
 
 // ─── Start Server ───────────────────────────────────────
 async function start() {
-  // ── Diagnostic: log DB location for deploy troubleshooting ──
+  // ── Diagnostic: log DB config for deploy troubleshooting ──
   console.log('╔══════════════════════════════════════════════════════╗');
-  console.log('║  DATABASE DIAGNOSTICS                               ║');
+  console.log('║  DATABASE DIAGNOSTICS (PostgreSQL)                  ║');
   console.log('╠══════════════════════════════════════════════════════╣');
-  console.log(`║  DB_PATH env    : ${process.env.DB_PATH || '(not set)'}`);
-  console.log(`║  Resolved path  : ${DB_PATH}`);
-  console.log(`║  File exists    : ${fs.existsSync(DB_PATH)}`);
-  console.log(`║  Dir exists     : ${fs.existsSync(path.dirname(DB_PATH))}`);
-  try {
-    const stat = fs.statSync(DB_PATH);
-    console.log(`║  File size      : ${stat.size} bytes`);
-    console.log(`║  Last modified  : ${stat.mtime.toISOString()}`);
-  } catch { console.log('║  File size      : (new DB)'); }
+  console.log(`║  DATABASE_URL   : ${process.env.DATABASE_URL ? '(set)' : '(not set — using localhost fallback)'}`);
+  console.log(`║  NODE_ENV       : ${process.env.NODE_ENV || '(not set)'}`);
   console.log('╚══════════════════════════════════════════════════════╝');
 
-  // Run seed at startup (not build time) so the Render persistent disk
-  // is available.  seed() is idempotent — skips if data already exists.
+  // Initialize database tables
+  try {
+    await initializeDatabase();
+  } catch (err) {
+    console.error('[Boot] Database init failed:', err);
+  }
+
+  // Run seed at startup — idempotent, skips if data already exists.
   try {
     await seed();
   } catch (err) {

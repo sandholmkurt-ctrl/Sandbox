@@ -127,7 +127,7 @@ async function api(method, path, { body, token, cookie } = {}) {
     const r = await api('GET', '/');
     if (r.status !== 200) throw new Error(`/ → ${r.status}`);
     // Extract JS bundle URL from index.html
-    const jsMatch = r.text.match(/src="\/assets\/(index-[a-zA-Z0-9]+\.js)"/);
+    const jsMatch = r.text.match(/src="\/assets\/(index-[a-zA-Z0-9_-]+\.js)"/);
     if (!jsMatch) throw new Error('Cannot find JS bundle in index.html');
     const jsFile = jsMatch[1];
     console.log(`      Bundle: ${jsFile}`);
