@@ -123,45 +123,47 @@ export default function MaintenanceMap({ schedule, currentMileage, vehicleLabel,
 
   return (
     <div className="card overflow-hidden">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-start justify-between mb-4">
         <div>
           <h3 className="text-lg font-bold text-gray-900">Maintenance Map</h3>
           <p className="text-xs text-gray-500">{vehicleLabel} • Every {axisStep >= 1000 ? `${(axisStep / 1000)}K` : axisStep.toLocaleString()} mi to {(maxMileage / 1000).toFixed(0)}K</p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex items-start gap-4">
           {/* Service Type Legend */}
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-gray-900 inline-block"></span>
-              Change Interval
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-yellow-500 inline-block"></span>
-              Inspect / Change as needed
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-red-600 inline-block"></span>
-              Service Interval
-            </span>
+          <div className="border border-gray-200 rounded-lg px-3 py-2">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Service Legend</span>
+            <div className="flex items-center gap-3 text-xs mt-1.5">
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-gray-900 inline-block"></span>
+                Change Interval
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-yellow-500 inline-block"></span>
+                Inspect / As needed
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-red-600 inline-block"></span>
+                Service Interval
+              </span>
+            </div>
           </div>
           {/* Status Legend */}
-          <div className="flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-green-600 inline-block"></span>
-              Complete
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-gray-400 inline-block"></span>
-              Scheduled
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-yellow-600 inline-block"></span>
-              Upcoming
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-gray-400 border-[3px] border-red-600 inline-block"></span>
-              Overdue
-            </span>
+          <div className="border border-gray-200 rounded-lg px-3 py-2">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Status</span>
+            <div className="flex items-center gap-3 text-xs mt-1.5">
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full border-[3px] border-green-600 inline-block"></span>
+                Complete
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full border-[3px] border-yellow-600 inline-block"></span>
+                Upcoming
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full border-[3px] border-red-600 inline-block"></span>
+                Overdue
+              </span>
+            </div>
           </div>
         </div>
       </div>
