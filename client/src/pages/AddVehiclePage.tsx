@@ -1,7 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import { Search, Car, ChevronDown } from 'lucide-react';
+
+/** Map NHTSA drive-type strings to our standard dropdown values */
+function mapNhtsaDriveType(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const lower = raw.toLowerCase();
+  if (lower.includes('4x4') || lower.includes('4wd') || lower.includes('4-wheel')) return '4WD';
+  if (lower.includes('awd') || lower.includes('all-wheel') || lower.includes('all wheel')) return 'AWD';
+  if (lower.includes('fwd') || lower.includes('front-wheel') || lower.includes('front wheel')) return 'FWD';
+  if (lower.includes('rwd') || lower.includes('rear-wheel') || lower.includes('rear wheel')) return 'RWD';
+  return '';
+}
 
 export default function AddVehiclePage() {
   const navigate = useNavigate();
@@ -24,6 +35,7 @@ export default function AddVehiclePage() {
   const [makes, setMakes] = useState<string[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [years, setYears] = useState<number[]>([]);
+  const vinDecodedModel = useRef<string>(''); // stash model from VIN before catalog loads
 
   // Load makes on mount
   useEffect(() => {
@@ -47,6 +59,18 @@ export default function AddVehiclePage() {
       .catch(() => {});
   }, [make, model]);
 
+  // When catalog models load, normalize VIN-decoded model to match catalog casing
+  useEffect(() => {
+    if (models.length > 0 && vinDecodedModel.current) {
+      const target = vinDecodedModel.current;
+      const matched = models.find(m => m.toLowerCase() === target.toLowerCase());
+      if (matched) {
+        setModel(matched);
+      }
+      vinDecodedModel.current = ''; // only normalize once
+    }
+  }, [models]);
+
   const handleVinLookup = async () => {
     if (vin.length !== 17) {
       setVinError('VIN must be exactly 17 characters');
@@ -56,11 +80,19 @@ export default function AddVehiclePage() {
     setVinLoading(true);
     try {
       const result = await api.get<any>(`/vin/decode/${vin}`);
+
+      // Normalize make against catalog (case-insensitive)
+      const decodedMake = result.make || '';
+      const matchedMake = makes.find(m => m.toLowerCase() === decodedMake.toLowerCase()) || decodedMake;
+
+      // Stash VIN model so the catalog-normalizing effect can match it
+      vinDecodedModel.current = result.model || '';
+
       setYear(result.year?.toString() || '');
-      setMake(result.make || '');
+      setMake(matchedMake);
       setModel(result.model || '');
       setEngine(result.engine || '');
-      setDriveType(result.driveType || '');
+      setDriveType(mapNhtsaDriveType(result.driveType));
       setTrimLevel(result.trimLevel || '');
       setMode('manual'); // Switch to show all fields
     } catch (err: any) {
