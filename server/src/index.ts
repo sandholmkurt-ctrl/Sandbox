@@ -98,6 +98,11 @@ app.use('/api/vin', vinRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/catalog', catalogRoutes);
 
+// ─── Keep-Alive Ping (lightweight, no DB) ───────────────
+app.get('/api/ping', (_req, res) => {
+  res.status(200).json({ pong: true, ts: Date.now() });
+});
+
 // ─── Health Check ───────────────────────────────────────
 app.get('/api/health', async (_req, res) => {
   let counts: any = {};
@@ -225,6 +230,25 @@ async function start() {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log(`API docs: http://localhost:${PORT}/api/health`);
     console.log(`Serving client from ${clientDist}`);
+
+    // ─── Self-Ping Keep-Alive (Render free tier) ──────────
+    // Render spins down free web services after 15 min of no
+    // inbound traffic.  When RENDER_EXTERNAL_URL is set, the
+    // server pings itself every 14 min via its public URL so
+    // the request counts as inbound and prevents spin-down.
+    const externalUrl = process.env.RENDER_EXTERNAL_URL;
+    if (externalUrl) {
+      const KEEP_ALIVE_INTERVAL = 14 * 60 * 1000; // 14 minutes
+      setInterval(async () => {
+        try {
+          const res = await fetch(`${externalUrl}/api/ping`);
+          console.log(`[Keep-Alive] Pinged ${externalUrl}/api/ping — ${res.status}`);
+        } catch (err: any) {
+          console.warn(`[Keep-Alive] Ping failed: ${err.message}`);
+        }
+      }, KEEP_ALIVE_INTERVAL);
+      console.log(`[Keep-Alive] Self-ping enabled every 14 min → ${externalUrl}/api/ping`);
+    }
   });
 }
 

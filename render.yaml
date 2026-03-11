@@ -20,8 +20,3 @@ services:
           property: connectionString
       - key: NPM_CONFIG_INCLUDE
         value: dev
-
-databases:
-  - name: vehicle-maintenance-db
-    region: oregon
-    plan: free
